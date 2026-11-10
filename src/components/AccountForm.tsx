@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { registerMockUser } from '../services/mockStore'
 import Icon from './Icon'
 import './AccountForm.css'
 
@@ -11,6 +12,15 @@ export default function AccountForm({ mode, onSwitch, onComplete }: {
   const signup = mode === 'signup'
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (signup) {
+      const form = event.currentTarget
+      const nameInput = form.querySelector<HTMLInputElement>('#name')
+      const emailInput = form.querySelector<HTMLInputElement>('#email')
+      registerMockUser({
+        name: nameInput?.value ?? '',
+        email: emailInput?.value ?? '',
+      })
+    }
     onComplete()
   }
 
