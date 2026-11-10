@@ -22,3 +22,30 @@ button:focus-visible, input:focus-visible {
 h1, p, figure { margin: 0; }
 button { -webkit-tap-highlight-color: transparent; }
 .icon { display: block; width: 20px; height: 20px; flex: none; }
+
+.primary-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  min-height: 54px;
+  margin-top: 5px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--blue);
+  color: white;
+  font-size: 16px;
+  font-weight: 700;
+}
+.primary-button:hover { background: #193398; }
+
+.account-switch button, .back-link {
+  background: none;
+  border: 0;
+  padding: 8px 2px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.back-link { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.back-link .icon { width: 16px; height: 16px; }
