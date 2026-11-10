@@ -141,7 +141,10 @@ h1:focus { outline: none; }
 .selection-dot { width: 19px; height: 19px; border: 1px solid #a4a79f; border-radius: 50%; margin-left: auto; flex: none; display: grid; place-content: center; }
 .role-option[aria-pressed=true] .selection-dot { color: white; background: var(--blue); border-color: var(--blue); }
 .selection-dot .icon { width: 14px; height: 14px; }
-.back-link { display: inline-flex; align-items: center; gap: 7px; margin-top: 20px; color: var(--muted); }
+.role-actions { display: flex; align-items: stretch; justify-content: space-between; gap: 12px; margin-top: 20px; }
+.role-actions .primary-button { min-height: 44px; margin: 0; gap: 14px; font-size: 14px; }
+.role-actions .primary-button:disabled { background: #e2e3de; color: #656961; cursor: default; }
+.back-link { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
 .back-link .icon { width: 16px; height: 16px; }
 
 @media (max-width: 760px) {

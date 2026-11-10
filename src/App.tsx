@@ -3,8 +3,8 @@ import type { FormEvent } from 'react'
 import totePhoto from './assets/seam-tote.webp'
 import './App.css'
 
-type Screen = 'login' | 'signup' | 'roles'
 type Role = 'ADMIN' | 'USER' | 'SELLER'
+type Screen = 'login' | 'signup' | 'roles' | Role
 type IconName = 'arrow' | 'back' | 'eye' | 'eyeOff' | 'lock' | 'check' | Role
 
 function Icon({ name }: { name: IconName }) {
@@ -70,7 +70,7 @@ function AccountForm({ mode, onSwitch, onComplete }: {
   )
 }
 
-function RolePicker({ onBack }: { onBack: () => void }) {
+function RolePicker({ onBack, onContinue }: { onBack: () => void; onContinue: (role: Role) => void }) {
   const [selected, setSelected] = useState<Role | null>(null)
   return (
     <>
@@ -83,15 +83,27 @@ function RolePicker({ onBack }: { onBack: () => void }) {
           </button>
         ))}
       </div>
-      <button className="back-link" type="button" onClick={onBack}><Icon name="back" />로그인으로 돌아가기</button>
+      <div className="role-actions">
+        <button className="back-link" type="button" onClick={onBack}><Icon name="back" />로그인으로 돌아가기</button>
+        <button className="primary-button" type="button" disabled={!selected} onClick={() => selected && onContinue(selected)}>
+          다음<Icon name="arrow" />
+        </button>
+      </div>
     </>
   )
+}
+
+const rolePages = {
+  ADMIN: { title: '관리자 콘솔', description: '관리자 페이지를 준비하고 있어요.' },
+  USER: { title: '일반회원 홈', description: '쇼핑 페이지를 준비하고 있어요.' },
+  SELLER: { title: '판매자 센터', description: '판매자 페이지를 준비하고 있어요.' },
 }
 
 const screens = {
   login: { title: '로그인', description: '지금은 입력 없이 로그인하고 역할을 선택할 수 있어요.' },
   signup: { title: '회원가입', description: '가입 정보를 입력하면 역할 선택으로 이어져요.' },
   roles: { title: '역할 선택', description: '이용할 역할을 선택해 주세요.' },
+  ...rolePages,
 }
 
 function App() {
@@ -119,9 +131,13 @@ function App() {
           <div className="panel-inner">
             <h1 id="screen-title" ref={heading} tabIndex={-1}>{screens[screen].title}</h1>
             <p className="intro">{screens[screen].description}</p>
-            {screen === 'roles'
-              ? <RolePicker onBack={() => setScreen('login')} />
-              : <AccountForm key={screen} mode={screen} onSwitch={() => setScreen(screen === 'login' ? 'signup' : 'login')} onComplete={() => setScreen('roles')} />}
+            {(screen === 'login' || screen === 'signup') && (
+              <AccountForm key={screen} mode={screen} onSwitch={() => setScreen(screen === 'login' ? 'signup' : 'login')} onComplete={() => setScreen('roles')} />
+            )}
+            {screen === 'roles' && <RolePicker onBack={() => setScreen('login')} onContinue={setScreen} />}
+            {screen in rolePages && (
+              <button className="back-link" type="button" onClick={() => setScreen('roles')}><Icon name="back" />역할 다시 선택</button>
+            )}
           </div>
         </section>
       </main>
