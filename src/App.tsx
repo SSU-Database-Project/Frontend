@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import RoleSelectionPage from './pages/RoleSelectionPage'
 import RoleHomePage from './pages/RoleHomePage'
+import MemberShop from './pages/member/MemberShop'
 import type { Role } from './types/role'
 
 type Screen = 'login' | 'signup' | 'roles' | Role
@@ -12,19 +13,31 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('login')
   const openLogin = () => setScreen('login')
   const openRoles = () => setScreen('roles')
-
-  function renderPage() {
-    switch (screen) {
-      case 'login':
-        return <LoginPage onSignup={() => setScreen('signup')} onComplete={openRoles} />
-      case 'signup':
-        return <SignupPage onLogin={openLogin} onComplete={openRoles} />
-      case 'roles':
-        return <RoleSelectionPage onBack={openLogin} onContinue={setScreen} />
-      default:
-        return <RoleHomePage role={screen} onBack={openRoles} />
-    }
+  function enterRole(role: Role) {
+    if (role === 'USER') window.history.replaceState(null, '', '#home')
+    setScreen(role)
   }
 
-  return <AccountLayout>{renderPage()}</AccountLayout>
+  function leaveShop() {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    openRoles()
+  }
+
+  if (screen === 'USER') return <MemberShop onExit={leaveShop} />
+
+  let page
+  switch (screen) {
+    case 'login':
+      page = <LoginPage onSignup={() => setScreen('signup')} onComplete={openRoles} />
+      break
+    case 'signup':
+      page = <SignupPage onLogin={openLogin} onComplete={openRoles} />
+      break
+    case 'roles':
+      page = <RoleSelectionPage onBack={openLogin} onContinue={enterRole} />
+      break
+    default:
+      page = <RoleHomePage role={screen} onBack={openRoles} />
+  }
+  return <AccountLayout>{page}</AccountLayout>
 }
