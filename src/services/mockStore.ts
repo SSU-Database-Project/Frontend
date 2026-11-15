@@ -20,7 +20,81 @@ import type {
 } from '../types/commerce'
 
 const STORAGE_KEY = 'seam_mock_db_v4'
+const AUTH_TOKEN_KEY = 'seam_access_token'
 export const CURRENT_SELLER_ID = 2
+
+/**
+ * 환경 변수 스위칭 플래그
+ * - 기본 실행 `npm run dev` / `npm run build` (VITE_USE_MOCK=false 또는 미설정): 실제 백엔드 API 연동 모드
+ * - Mock 실행 `npm run dev:mock` (VITE_USE_MOCK=true): 프론트엔드 Mock 데이터 모드
+ */
+export const IS_MOCK_MODE: boolean =
+  import.meta.env.VITE_USE_MOCK === 'true'
+
+export const API_BASE_URL: string =
+  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+
+type ApiEnvelope<T> = {
+  success?: boolean
+  data?: T | { content?: T }
+  error?: { code?: string; message?: string } | null
+}
+
+async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY)
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : `${API_BASE_URL.replace(/\/$/, '')}${endpoint}`
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  })
+
+  let payload: ApiEnvelope<T> | null = null
+  const text = await response.text()
+  if (text) {
+    try {
+      payload = JSON.parse(text) as ApiEnvelope<T>
+    } catch {
+      payload = null
+    }
+  }
+
+  if (!response.ok || payload?.success === false) {
+    const errorMessage =
+      payload?.error?.message ??
+      `백엔드 API 요청 실패 (${response.status} ${response.statusText})`
+    throw new Error(errorMessage)
+  }
+
+  if (payload && 'data' in payload && payload.data !== undefined) {
+    const rawData = payload.data
+    if (
+      rawData &&
+      typeof rawData === 'object' &&
+      !Array.isArray(rawData) &&
+      'content' in rawData &&
+      Array.isArray((rawData as { content?: unknown }).content)
+    ) {
+      return (rawData as { content: T }).content
+    }
+    return rawData as T
+  }
+
+  return (payload as unknown as T) ?? (undefined as unknown as T)
+}
 
 function createSvgSample(bg: string, fg: string, title: string, subtitle: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="750" viewBox="0 0 600 750">
@@ -832,16 +906,24 @@ function saveDb(db: MockDatabase): void {
 }
 
 export function resetMockStore(): void {
+  if (!IS_MOCK_MODE) return
   const initial = createInitialDatabase()
   saveDb(initial)
 }
 
 export function getUnreadChanges(): UnreadChangesState {
+  if (!IS_MOCK_MODE) {
+    return {
+      SELLER: { brands: 0, products: 0, inventory: 0, orders: 0, stats: 0 },
+      ADMIN: { brands: 0, products: 0, users: 0, stats: 0 },
+    }
+  }
   const db = loadDb()
   return ensureUnreadChanges(db)
 }
 
 export function clearSellerTabBadge(tab: SellerTabKey): void {
+  if (!IS_MOCK_MODE) return
   const db = loadDb()
   const unread = ensureUnreadChanges(db)
   if (unread.SELLER[tab] !== 0) {
@@ -851,6 +933,7 @@ export function clearSellerTabBadge(tab: SellerTabKey): void {
 }
 
 export function clearAdminTabBadge(tab: AdminTabKey): void {
+  if (!IS_MOCK_MODE) return
   const db = loadDb()
   const unread = ensureUnreadChanges(db)
   if (unread.ADMIN[tab] !== 0) {
@@ -859,28 +942,73 @@ export function clearAdminTabBadge(tab: AdminTabKey): void {
   }
 }
 
-export function registerMockUser(input: { name: string; email: string }): void {
+export async function loginUser(input: {
+  email: string
+  password?: string
+}): Promise<void> {
+  if (IS_MOCK_MODE) {
+    return
+  }
+
+  const trimmedEmail = input.email.trim()
+  if (!trimmedEmail) return
+
+  const result = await apiRequest<{ accessToken?: string; token?: string }>(
+    '/api/auth/login',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        email: trimmedEmail,
+        password: input.password ?? '',
+      }),
+    },
+  )
+  const token = result?.accessToken ?? result?.token
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token)
+  }
+}
+
+export async function registerMockUser(input: {
+  name: string
+  email: string
+  password?: string
+}): Promise<void> {
   const trimmedName = input.name.trim()
   const trimmedEmail = input.email.trim()
   if (!trimmedName && !trimmedEmail) return
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const exists = db.users.some(
-    u => u.email.toLowerCase() === trimmedEmail.toLowerCase(),
-  )
-  if (!exists) {
-    const nextUserId = db.users.reduce((max, u) => Math.max(max, u.id), 0) + 1
-    db.users.push({
-      id: nextUserId,
-      email: trimmedEmail || `user${nextUserId}@example.com`,
-      name: trimmedName || `신규회원#${nextUserId}`,
-      role: 'USER',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString().slice(0, 19),
-    })
+
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const exists = db.users.some(
+      u => u.email.toLowerCase() === trimmedEmail.toLowerCase(),
+    )
+    if (!exists) {
+      const nextUserId = db.users.reduce((max, u) => Math.max(max, u.id), 0) + 1
+      db.users.push({
+        id: nextUserId,
+        email: trimmedEmail || `user${nextUserId}@example.com`,
+        name: trimmedName || `신규회원#${nextUserId}`,
+        role: 'USER',
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString().slice(0, 19),
+      })
+    }
+    unread.ADMIN.users += 1
+    saveDb(db)
+    return
   }
-  unread.ADMIN.users += 1
-  saveDb(db)
+
+  await apiRequest('/api/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: trimmedName,
+      email: trimmedEmail,
+      password: input.password ?? '',
+      role: 'USER',
+    }),
+  })
 }
 
 export function getCatalogData() {
@@ -913,7 +1041,7 @@ export type InitialProductDraftInput = {
 }
 
 function validateInitialProductDraftWithDb(
-  db: MockDatabase,
+  db: MockDatabase | null,
   draft: InitialProductDraftInput,
   existingBrandId?: number,
 ) {
@@ -928,7 +1056,7 @@ function validateInitialProductDraftWithDb(
     throw new Error('상품명과 품번을 모두 입력해 주세요.')
   }
 
-  if (existingBrandId !== undefined) {
+  if (db && existingBrandId !== undefined) {
     const duplicateCode = db.products.some(
       p =>
         p.brandId === existingBrandId &&
@@ -986,195 +1114,226 @@ export function validateInitialProductDraft(
   draft: InitialProductDraftInput,
   brandName?: string,
 ): void {
-  const db = loadDb()
-  const trimmedBrand = brandName?.trim().toLowerCase()
-  const existingBrand = trimmedBrand
-    ? db.brands.find(b => b.name.toLowerCase() === trimmedBrand)
-    : undefined
-  validateInitialProductDraftWithDb(db, draft, existingBrand?.id)
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const trimmedBrand = brandName?.trim().toLowerCase()
+    const existingBrand = trimmedBrand
+      ? db.brands.find(b => b.name.toLowerCase() === trimmedBrand)
+      : undefined
+    validateInitialProductDraftWithDb(db, draft, existingBrand?.id)
+    return
+  }
+
+  validateInitialProductDraftWithDb(null, draft)
 }
 
-export function getSellerBrands(sellerId: number = CURRENT_SELLER_ID): Brand[] {
-  const db = loadDb()
-  // 이미 등록(승인 완료)된 브랜드는 별도 신청 없이 모든 판매자가 즉시 사용 가능
-  return db.brands
-    .filter(b => b.sellerId === sellerId || b.status === 'APPROVED')
-    .sort((a, b) => b.id - a.id)
+export async function getSellerBrands(
+  sellerId: number = CURRENT_SELLER_ID,
+): Promise<Brand[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    // 이미 등록(승인 완료)된 브랜드는 별도 신청 없이 모든 판매자가 즉시 사용 가능
+    return db.brands
+      .filter(b => b.sellerId === sellerId || b.status === 'APPROVED')
+      .sort((a, b) => b.id - a.id)
+  }
+
+  return apiRequest<Brand[]>('/api/seller/brands')
 }
 
-export function createSellerBrand(input: {
+export async function createSellerBrand(input: {
   name: string
   description: string
   sellerId?: number
   initialProduct: InitialProductDraftInput
-}): Brand {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const sellerId = input.sellerId ?? CURRENT_SELLER_ID
-  const trimmedName = input.name.trim()
-  if (!trimmedName) {
-    throw new Error('브랜드명을 입력해 주세요.')
-  }
-  if (!input.initialProduct) {
-    throw new Error('브랜드 등록 시 초기 대표 상품 1건을 필수로 함께 신청해야 합니다.')
-  }
+}): Promise<Brand> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const sellerId = input.sellerId ?? CURRENT_SELLER_ID
+    const trimmedName = input.name.trim()
+    if (!trimmedName) {
+      throw new Error('브랜드명을 입력해 주세요.')
+    }
+    if (!input.initialProduct) {
+      throw new Error('브랜드 등록 시 초기 대표 상품 1건을 필수로 함께 신청해야 합니다.')
+    }
 
-  const seller = db.users.find(u => u.id === sellerId)
-  const sellerName = seller?.sellerInfo?.companyName ?? seller?.name ?? '판매자'
-  const now = new Date().toISOString().slice(0, 19)
+    const seller = db.users.find(u => u.id === sellerId)
+    const sellerName = seller?.sellerInfo?.companyName ?? seller?.name ?? '판매자'
+    const now = new Date().toISOString().slice(0, 19)
 
-  const existingBrand = db.brands.find(
-    b => b.name.toLowerCase() === trimmedName.toLowerCase(),
-  )
+    const existingBrand = db.brands.find(
+      b => b.name.toLowerCase() === trimmedName.toLowerCase(),
+    )
 
-  if (existingBrand && existingBrand.sellerId === sellerId && existingBrand.status === 'PENDING') {
-    throw new Error('현재 승인 대기 중인 브랜드입니다.')
-  }
+    if (existingBrand && existingBrand.sellerId === sellerId && existingBrand.status === 'PENDING') {
+      throw new Error('현재 승인 대기 중인 브랜드입니다.')
+    }
 
-  // 초기 대표 상품 검증 (동일 브랜드 내 품번 중복 검사 포함)
-  const { category, parentCategory, trimmedProductName, trimmedProductCode } =
-    validateInitialProductDraftWithDb(db, input.initialProduct, existingBrand?.id)
+    // 초기 대표 상품 검증 (동일 브랜드 내 품번 중복 검사 포함)
+    const { category, parentCategory, trimmedProductName, trimmedProductCode } =
+      validateInitialProductDraftWithDb(db, input.initialProduct, existingBrand?.id)
 
-  let targetBrand: Brand
-  let brandChanged = false
+    let targetBrand: Brand
+    let brandChanged = false
 
-  if (existingBrand) {
-    if (existingBrand.status === 'APPROVED') {
-      // 이미 등록(승인)되어 있는 브랜드는 별도 신청 없이 바로 사용 가능
-      targetBrand = existingBrand
+    if (existingBrand) {
+      if (existingBrand.status === 'APPROVED') {
+        // 이미 등록(승인)되어 있는 브랜드는 별도 신청 없이 바로 사용 가능
+        targetBrand = existingBrand
+      } else {
+        // 거절되었거나 미승인 상태인 기존 브랜드는 재신청으로 갱신
+        existingBrand.sellerId = sellerId
+        existingBrand.sellerName = sellerName
+        existingBrand.description = input.description.trim() || existingBrand.description
+        existingBrand.status = 'PENDING'
+        existingBrand.rejectReason = undefined
+        existingBrand.createdAt = now
+        targetBrand = existingBrand
+        brandChanged = true
+      }
     } else {
-      // 거절되었거나 미승인 상태인 기존 브랜드는 재신청으로 갱신
-      existingBrand.sellerId = sellerId
-      existingBrand.sellerName = sellerName
-      existingBrand.description = input.description.trim() || existingBrand.description
-      existingBrand.status = 'PENDING'
-      existingBrand.rejectReason = undefined
-      existingBrand.createdAt = now
-      targetBrand = existingBrand
+      targetBrand = {
+        id: db.nextIds.brand++,
+        sellerId,
+        sellerName,
+        name: trimmedName,
+        description: input.description.trim() || '신규 등록 브랜드',
+        status: 'PENDING',
+        createdAt: now,
+      }
+      db.brands.push(targetBrand)
       brandChanged = true
     }
-  } else {
-    targetBrand = {
-      id: db.nextIds.brand++,
+
+    unread.SELLER.brands = 0
+    if (brandChanged) {
+      unread.ADMIN.brands += 1
+    }
+
+    // 브랜드 등록 시 필수 초기 대표 상품 생성
+    const draft = input.initialProduct
+    const productId = db.nextIds.product++
+    let addedStockHistoryCount = 0
+
+    const builtOptions: ProductOption[] = draft.options.map(opt => {
+      const color = FIXED_COLORS.find(c => c.id === opt.colorId)!
+      const size = FIXED_SIZES.find(s => s.id === opt.sizeId)!
+      const optionId = db.nextIds.option++
+      const qty = Math.max(0, opt.stockQuantity)
+      if (qty > 0) {
+        addedStockHistoryCount += 1
+        db.stockHistory.unshift({
+          id: db.nextIds.history++,
+          optionId,
+          productId,
+          productName: trimmedProductName,
+          productCode: trimmedProductCode,
+          colorName: color.name,
+          sizeLabel: size.label,
+          changeQty: qty,
+          quantityAfter: qty,
+          type: 'IN',
+          memo: '브랜드 초기 상품 등록 입고',
+          createdAt: now,
+        })
+      }
+      return {
+        id: optionId,
+        productId,
+        colorId: color.id,
+        colorName: color.name,
+        hexCode: color.hexCode,
+        sizeId: size.id,
+        sizeLabel: size.label,
+        stockQuantity: qty,
+      }
+    })
+
+    const newProduct: Product = {
+      id: productId,
+      brandId: targetBrand.id,
+      brandName: targetBrand.name,
       sellerId,
       sellerName,
-      name: trimmedName,
-      description: input.description.trim() || '신규 등록 브랜드',
+      categoryId: category.id,
+      parentCategoryName: parentCategory?.name ?? '패션',
+      categoryName: category.name,
+      sizeGroup: category.sizeGroup,
+      name: trimmedProductName,
+      productCode: trimmedProductCode,
+      gender: draft.gender,
+      season: draft.season.trim().toUpperCase(),
+      shipDays: draft.shipDays,
+      price: draft.price,
+      imageUrl: draft.imageUrl || SAMPLE_PRODUCT_IMAGES[0].url,
       status: 'PENDING',
       createdAt: now,
+      options: builtOptions,
     }
-    db.brands.push(targetBrand)
-    brandChanged = true
+    db.products.push(newProduct)
+    unread.SELLER.products += 1
+    unread.ADMIN.products += 1
+    if (addedStockHistoryCount > 0) {
+      unread.SELLER.inventory += 1
+    }
+
+    saveDb(db)
+    return targetBrand
   }
 
-  unread.SELLER.brands = 0
-  if (brandChanged) {
-    unread.ADMIN.brands += 1
-  }
-
-  // 브랜드 등록 시 필수 초기 대표 상품 생성
-  const draft = input.initialProduct
-  const productId = db.nextIds.product++
-  let addedStockHistoryCount = 0
-
-  const builtOptions: ProductOption[] = draft.options.map(opt => {
-    const color = FIXED_COLORS.find(c => c.id === opt.colorId)!
-    const size = FIXED_SIZES.find(s => s.id === opt.sizeId)!
-    const optionId = db.nextIds.option++
-    const qty = Math.max(0, opt.stockQuantity)
-    if (qty > 0) {
-      addedStockHistoryCount += 1
-      db.stockHistory.unshift({
-        id: db.nextIds.history++,
-        optionId,
-        productId,
-        productName: trimmedProductName,
-        productCode: trimmedProductCode,
-        colorName: color.name,
-        sizeLabel: size.label,
-        changeQty: qty,
-        quantityAfter: qty,
-        type: 'IN',
-        memo: '브랜드 초기 상품 등록 입고',
-        createdAt: now,
-      })
-    }
-    return {
-      id: optionId,
-      productId,
-      colorId: color.id,
-      colorName: color.name,
-      hexCode: color.hexCode,
-      sizeId: size.id,
-      sizeLabel: size.label,
-      stockQuantity: qty,
-    }
+  return apiRequest<Brand>('/api/seller/brands', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: input.name.trim(),
+      description: input.description.trim(),
+      initialProduct: input.initialProduct,
+    }),
   })
-
-  const newProduct: Product = {
-    id: productId,
-    brandId: targetBrand.id,
-    brandName: targetBrand.name,
-    sellerId,
-    sellerName,
-    categoryId: category.id,
-    parentCategoryName: parentCategory?.name ?? '패션',
-    categoryName: category.name,
-    sizeGroup: category.sizeGroup,
-    name: trimmedProductName,
-    productCode: trimmedProductCode,
-    gender: draft.gender,
-    season: draft.season.trim().toUpperCase(),
-    shipDays: draft.shipDays,
-    price: draft.price,
-    imageUrl: draft.imageUrl || SAMPLE_PRODUCT_IMAGES[0].url,
-    status: 'PENDING',
-    createdAt: now,
-    options: builtOptions,
-  }
-  db.products.push(newProduct)
-  unread.SELLER.products += 1
-  unread.ADMIN.products += 1
-  if (addedStockHistoryCount > 0) {
-    unread.SELLER.inventory += 1
-  }
-
-  saveDb(db)
-  return targetBrand
 }
 
-export function deleteSellerBrand(
+export async function deleteSellerBrand(
   brandId: number,
   actor: 'SELLER' | 'ADMIN' = 'SELLER',
-): void {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const index = db.brands.findIndex(b => b.id === brandId)
-  if (index === -1) {
-    throw new Error('브랜드를 찾을 수 없습니다.')
-  }
-  db.brands.splice(index, 1)
-
-  if (actor === 'SELLER') {
-    unread.SELLER.brands = 0
-    unread.ADMIN.brands += 1
-  } else {
-    unread.ADMIN.brands = 0
-    unread.SELLER.brands += 1
-  }
-
-  let deletedProductsCount = 0
-  for (const product of db.products) {
-    if (product.brandId === brandId && product.status !== 'DELETED') {
-      product.status = 'DELETED'
-      deletedProductsCount += 1
+): Promise<void> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const index = db.brands.findIndex(b => b.id === brandId)
+    if (index === -1) {
+      throw new Error('브랜드를 찾을 수 없습니다.')
     }
+    db.brands.splice(index, 1)
+
+    if (actor === 'SELLER') {
+      unread.SELLER.brands = 0
+      unread.ADMIN.brands += 1
+    } else {
+      unread.ADMIN.brands = 0
+      unread.SELLER.brands += 1
+    }
+
+    let deletedProductsCount = 0
+    for (const product of db.products) {
+      if (product.brandId === brandId && product.status !== 'DELETED') {
+        product.status = 'DELETED'
+        deletedProductsCount += 1
+      }
+    }
+    if (deletedProductsCount > 0) {
+      unread.SELLER.products += deletedProductsCount
+      unread.ADMIN.products += deletedProductsCount
+    }
+    saveDb(db)
+    return
   }
-  if (deletedProductsCount > 0) {
-    unread.SELLER.products += deletedProductsCount
-    unread.ADMIN.products += deletedProductsCount
-  }
-  saveDb(db)
+
+  const endpoint =
+    actor === 'ADMIN'
+      ? `/api/admin/brands/${brandId}`
+      : `/api/seller/brands/${brandId}`
+  await apiRequest<void>(endpoint, { method: 'DELETE' })
 }
 
 // ============================================================================
@@ -1200,11 +1359,17 @@ export type UpsertProductInput = {
   options: ProductOptionInput[]
 }
 
-export function getSellerProducts(sellerId: number = CURRENT_SELLER_ID): Product[] {
-  const db = loadDb()
-  return db.products
-    .filter(p => p.sellerId === sellerId && p.status !== 'DELETED')
-    .sort((a, b) => b.id - a.id)
+export async function getSellerProducts(
+  sellerId: number = CURRENT_SELLER_ID,
+): Promise<Product[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    return db.products
+      .filter(p => p.sellerId === sellerId && p.status !== 'DELETED')
+      .sort((a, b) => b.id - a.id)
+  }
+
+  return apiRequest<Product[]>('/api/seller/products')
 }
 
 function validateProductInput(
@@ -1284,289 +1449,349 @@ function validateProductInput(
   return { brand, category, parentCategory, trimmedName, trimmedCode }
 }
 
-export function createSellerProduct(input: UpsertProductInput): Product {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const { brand, category, parentCategory, trimmedName, trimmedCode } =
-    validateProductInput(db, input)
-
-  const now = new Date().toISOString().slice(0, 19)
-  const productId = db.nextIds.product++
-  let addedStockHistoryCount = 0
-
-  const builtOptions: ProductOption[] = input.options.map(opt => {
-    const color = FIXED_COLORS.find(c => c.id === opt.colorId)!
-    const size = FIXED_SIZES.find(s => s.id === opt.sizeId)!
-    const optionId = db.nextIds.option++
-    if (opt.stockQuantity > 0) {
-      addedStockHistoryCount += 1
-      db.stockHistory.unshift({
-        id: db.nextIds.history++,
-        optionId,
-        productId,
-        productName: trimmedName,
-        productCode: trimmedCode,
-        colorName: color.name,
-        sizeLabel: size.label,
-        changeQty: opt.stockQuantity,
-        quantityAfter: opt.stockQuantity,
-        type: 'IN',
-        memo: '신규 상품 등록 초기 재고',
-        createdAt: now,
-      })
-    }
-    return {
-      id: optionId,
-      productId,
-      colorId: color.id,
-      colorName: color.name,
-      hexCode: color.hexCode,
-      sizeId: size.id,
-      sizeLabel: size.label,
-      stockQuantity: opt.stockQuantity,
-    }
-  })
-
-  const seller = db.users.find(u => u.id === CURRENT_SELLER_ID)
-  const sellerName =
-    seller?.sellerInfo?.companyName ?? seller?.name ?? brand.sellerName
-
-  const newProduct: Product = {
-    id: productId,
-    brandId: brand.id,
-    brandName: brand.name,
-    sellerId: CURRENT_SELLER_ID,
-    sellerName,
-    categoryId: category.id,
-    parentCategoryName: parentCategory?.name ?? '패션',
-    categoryName: category.name,
-    sizeGroup: category.sizeGroup,
-    name: trimmedName,
-    productCode: trimmedCode,
-    gender: input.gender,
-    season: input.season.trim().toUpperCase(),
-    shipDays: input.shipDays,
-    price: input.price,
-    imageUrl: input.imageUrl || SAMPLE_PRODUCT_IMAGES[0].url,
-    status: 'PENDING',
-    options: builtOptions,
-    createdAt: now,
-  }
-
-  db.products.push(newProduct)
-  unread.SELLER.products = 0
-  unread.ADMIN.products += 1
-  if (addedStockHistoryCount > 0) {
-    unread.SELLER.inventory += 1
-  }
-  saveDb(db)
-  return newProduct
-}
-
-export function updateSellerProduct(
-  productId: number,
+export async function createSellerProduct(
   input: UpsertProductInput,
-): Product {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const product = db.products.find(p => p.id === productId)
-  if (!product) {
-    throw new Error('상품을 찾을 수 없습니다.')
-  }
-  if (product.status === 'BLOCKED' || product.status === 'DELETED') {
-    throw new Error('차단되었거나 삭제된 상품은 수정할 수 없습니다.')
-  }
+): Promise<Product> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const { brand, category, parentCategory, trimmedName, trimmedCode } =
+      validateProductInput(db, input)
 
-  const { brand, category, parentCategory, trimmedName, trimmedCode } =
-    validateProductInput(db, input, productId)
+    const now = new Date().toISOString().slice(0, 19)
+    const productId = db.nextIds.product++
+    let addedStockHistoryCount = 0
 
-  const now = new Date().toISOString().slice(0, 19)
-  let inventoryChanged = product.options.length !== input.options.length
-  const updatedOptions: ProductOption[] = input.options.map(opt => {
-    const existing = product.options.find(
-      o => o.colorId === opt.colorId && o.sizeId === opt.sizeId,
-    )
-    const color = FIXED_COLORS.find(c => c.id === opt.colorId)!
-    const size = FIXED_SIZES.find(s => s.id === opt.sizeId)!
-    if (existing) {
-      if (existing.stockQuantity !== opt.stockQuantity) {
-        inventoryChanged = true
+    const builtOptions: ProductOption[] = input.options.map(opt => {
+      const color = FIXED_COLORS.find(c => c.id === opt.colorId)!
+      const size = FIXED_SIZES.find(s => s.id === opt.sizeId)!
+      const optionId = db.nextIds.option++
+      if (opt.stockQuantity > 0) {
+        addedStockHistoryCount += 1
+        db.stockHistory.unshift({
+          id: db.nextIds.history++,
+          optionId,
+          productId,
+          productName: trimmedName,
+          productCode: trimmedCode,
+          colorName: color.name,
+          sizeLabel: size.label,
+          changeQty: opt.stockQuantity,
+          quantityAfter: opt.stockQuantity,
+          type: 'IN',
+          memo: '신규 상품 등록 초기 재고',
+          createdAt: now,
+        })
       }
       return {
-        ...existing,
+        id: optionId,
+        productId,
+        colorId: color.id,
+        colorName: color.name,
+        hexCode: color.hexCode,
+        sizeId: size.id,
+        sizeLabel: size.label,
         stockQuantity: opt.stockQuantity,
       }
+    })
+
+    const seller = db.users.find(u => u.id === CURRENT_SELLER_ID)
+    const sellerName =
+      seller?.sellerInfo?.companyName ?? seller?.name ?? brand.sellerName
+
+    const newProduct: Product = {
+      id: productId,
+      brandId: brand.id,
+      brandName: brand.name,
+      sellerId: CURRENT_SELLER_ID,
+      sellerName,
+      categoryId: category.id,
+      parentCategoryName: parentCategory?.name ?? '패션',
+      categoryName: category.name,
+      sizeGroup: category.sizeGroup,
+      name: trimmedName,
+      productCode: trimmedCode,
+      gender: input.gender,
+      season: input.season.trim().toUpperCase(),
+      shipDays: input.shipDays,
+      price: input.price,
+      imageUrl: input.imageUrl || SAMPLE_PRODUCT_IMAGES[0].url,
+      status: 'PENDING',
+      options: builtOptions,
+      createdAt: now,
     }
-    inventoryChanged = true
-    const optionId = db.nextIds.option++
-    if (opt.stockQuantity > 0) {
-      db.stockHistory.unshift({
-        id: db.nextIds.history++,
-        optionId,
-        productId,
-        productName: trimmedName,
-        productCode: trimmedCode,
-        colorName: color.name,
-        sizeLabel: size.label,
-        changeQty: opt.stockQuantity,
-        quantityAfter: opt.stockQuantity,
-        type: 'IN',
-        memo: '옵션 추가 초기 입고',
-        createdAt: now,
-      })
-    }
-    return {
-      id: optionId,
-      productId,
-      colorId: color.id,
-      colorName: color.name,
-      hexCode: color.hexCode,
-      sizeId: size.id,
-      sizeLabel: size.label,
-      stockQuantity: opt.stockQuantity,
-    }
-  })
 
-  product.brandId = brand.id
-  product.brandName = brand.name
-  product.categoryId = category.id
-  product.parentCategoryName = parentCategory?.name ?? '패션'
-  product.categoryName = category.name
-  product.sizeGroup = category.sizeGroup
-  product.name = trimmedName
-  product.productCode = trimmedCode
-  product.gender = input.gender
-  product.season = input.season.trim().toUpperCase()
-  product.shipDays = input.shipDays
-  product.price = input.price
-  product.imageUrl = input.imageUrl || product.imageUrl
-  product.options = updatedOptions
-  // 명세서 V4: 정보 수정 시 재승인 대기(PENDING), 승인 전까지 구매자에게 숨김
-  product.status = 'PENDING'
-  product.rejectReason = undefined
-
-  unread.SELLER.products = 0
-  unread.ADMIN.products += 1
-  if (inventoryChanged) {
-    unread.SELLER.inventory += 1
-  }
-
-  saveDb(db)
-  return product
-}
-
-export function updateSellerProductSaleStatus(
-  productId: number,
-  nextStatus: 'ON_SALE' | 'SOLD_OUT',
-): Product {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const product = db.products.find(p => p.id === productId)
-  if (!product) {
-    throw new Error('상품을 찾을 수 없습니다.')
-  }
-  if (product.status !== 'ON_SALE' && product.status !== 'SOLD_OUT') {
-    throw new Error('승인된 상품만 판매중/품절 상태를 전환할 수 있습니다.')
-  }
-  product.status = nextStatus
-  unread.SELLER.products = 0
-  unread.ADMIN.products += 1
-  saveDb(db)
-  return product
-}
-
-export function deleteSellerProduct(
-  productId: number,
-  actor: 'SELLER' | 'ADMIN' = 'SELLER',
-): void {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const product = db.products.find(p => p.id === productId)
-  if (!product) {
-    throw new Error('상품을 찾을 수 없습니다.')
-  }
-  product.status = 'DELETED'
-  if (actor === 'SELLER') {
+    db.products.push(newProduct)
     unread.SELLER.products = 0
     unread.ADMIN.products += 1
-  } else {
-    unread.ADMIN.products = 0
-    unread.SELLER.products += 1
+    if (addedStockHistoryCount > 0) {
+      unread.SELLER.inventory += 1
+    }
+    saveDb(db)
+    return newProduct
   }
-  saveDb(db)
+
+  return apiRequest<Product>('/api/seller/products', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
 }
 
-export function adjustOptionStock(input: {
+export async function updateSellerProduct(
+  productId: number,
+  input: UpsertProductInput,
+): Promise<Product> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const product = db.products.find(p => p.id === productId)
+    if (!product) {
+      throw new Error('상품을 찾을 수 없습니다.')
+    }
+    if (product.status === 'BLOCKED' || product.status === 'DELETED') {
+      throw new Error('차단되었거나 삭제된 상품은 수정할 수 없습니다.')
+    }
+
+    const { brand, category, parentCategory, trimmedName, trimmedCode } =
+      validateProductInput(db, input, productId)
+
+    const now = new Date().toISOString().slice(0, 19)
+    let inventoryChanged = product.options.length !== input.options.length
+    const updatedOptions: ProductOption[] = input.options.map(opt => {
+      const existing = product.options.find(
+        o => o.colorId === opt.colorId && o.sizeId === opt.sizeId,
+      )
+      const color = FIXED_COLORS.find(c => c.id === opt.colorId)!
+      const size = FIXED_SIZES.find(s => s.id === opt.sizeId)!
+      if (existing) {
+        if (existing.stockQuantity !== opt.stockQuantity) {
+          inventoryChanged = true
+        }
+        return {
+          ...existing,
+          stockQuantity: opt.stockQuantity,
+        }
+      }
+      inventoryChanged = true
+      const optionId = db.nextIds.option++
+      if (opt.stockQuantity > 0) {
+        db.stockHistory.unshift({
+          id: db.nextIds.history++,
+          optionId,
+          productId,
+          productName: trimmedName,
+          productCode: trimmedCode,
+          colorName: color.name,
+          sizeLabel: size.label,
+          changeQty: opt.stockQuantity,
+          quantityAfter: opt.stockQuantity,
+          type: 'IN',
+          memo: '옵션 추가 초기 입고',
+          createdAt: now,
+        })
+      }
+      return {
+        id: optionId,
+        productId,
+        colorId: color.id,
+        colorName: color.name,
+        hexCode: color.hexCode,
+        sizeId: size.id,
+        sizeLabel: size.label,
+        stockQuantity: opt.stockQuantity,
+      }
+    })
+
+    product.brandId = brand.id
+    product.brandName = brand.name
+    product.categoryId = category.id
+    product.parentCategoryName = parentCategory?.name ?? '패션'
+    product.categoryName = category.name
+    product.sizeGroup = category.sizeGroup
+    product.name = trimmedName
+    product.productCode = trimmedCode
+    product.gender = input.gender
+    product.season = input.season.trim().toUpperCase()
+    product.shipDays = input.shipDays
+    product.price = input.price
+    product.imageUrl = input.imageUrl || product.imageUrl
+    product.options = updatedOptions
+    // 명세서 V4: 정보 수정 시 재승인 대기(PENDING), 승인 전까지 구매자에게 숨김
+    product.status = 'PENDING'
+    product.rejectReason = undefined
+
+    unread.SELLER.products = 0
+    unread.ADMIN.products += 1
+    if (inventoryChanged) {
+      unread.SELLER.inventory += 1
+    }
+
+    saveDb(db)
+    return product
+  }
+
+  return apiRequest<Product>(`/api/seller/products/${productId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function updateSellerProductSaleStatus(
+  productId: number,
+  nextStatus: 'ON_SALE' | 'SOLD_OUT',
+): Promise<Product> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const product = db.products.find(p => p.id === productId)
+    if (!product) {
+      throw new Error('상품을 찾을 수 없습니다.')
+    }
+    if (product.status !== 'ON_SALE' && product.status !== 'SOLD_OUT') {
+      throw new Error('승인된 상품만 판매중/품절 상태를 전환할 수 있습니다.')
+    }
+    product.status = nextStatus
+    unread.SELLER.products = 0
+    unread.ADMIN.products += 1
+    saveDb(db)
+    return product
+  }
+
+  return apiRequest<Product>(`/api/seller/products/${productId}/sale-status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: nextStatus }),
+  })
+}
+
+export async function deleteSellerProduct(
+  productId: number,
+  actor: 'SELLER' | 'ADMIN' = 'SELLER',
+): Promise<void> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const product = db.products.find(p => p.id === productId)
+    if (!product) {
+      throw new Error('상품을 찾을 수 없습니다.')
+    }
+    product.status = 'DELETED'
+    if (actor === 'SELLER') {
+      unread.SELLER.products = 0
+      unread.ADMIN.products += 1
+    } else {
+      unread.ADMIN.products = 0
+      unread.SELLER.products += 1
+    }
+    saveDb(db)
+    return
+  }
+
+  const endpoint =
+    actor === 'ADMIN'
+      ? `/api/admin/products/${productId}`
+      : `/api/seller/products/${productId}`
+  await apiRequest<void>(endpoint, { method: 'DELETE' })
+}
+
+export async function adjustOptionStock(input: {
   optionId: number
   type: 'IN' | 'ADJUST'
   changeQty: number
   memo?: string
-}): ProductOption {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  if (input.changeQty === 0 || Number.isNaN(input.changeQty)) {
-    throw new Error('변동 수량은 0이 아닌 정수여야 합니다.')
-  }
-  if (input.type === 'IN' && input.changeQty < 0) {
-    throw new Error('입고 수량은 양수여야 합니다.')
+}): Promise<ProductOption> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    if (input.changeQty === 0 || Number.isNaN(input.changeQty)) {
+      throw new Error('변동 수량은 0이 아닌 정수여야 합니다.')
+    }
+    if (input.type === 'IN' && input.changeQty < 0) {
+      throw new Error('입고 수량은 양수여야 합니다.')
+    }
+
+    for (const product of db.products) {
+      const option = product.options.find(o => o.id === input.optionId)
+      if (option) {
+        const nextQty = option.stockQuantity + input.changeQty
+        if (nextQty < 0) {
+          throw new Error('조정 후 재고 수량은 0 미만이 될 수 없습니다.')
+        }
+        option.stockQuantity = nextQty
+        db.stockHistory.unshift({
+          id: db.nextIds.history++,
+          optionId: option.id,
+          productId: product.id,
+          productName: product.name,
+          productCode: product.productCode,
+          colorName: option.colorName,
+          sizeLabel: option.sizeLabel,
+          changeQty: input.changeQty,
+          quantityAfter: nextQty,
+          type: input.type,
+          memo: input.memo?.trim() || (input.type === 'IN' ? '정기 재고 입고' : '재고 실사 조정'),
+          createdAt: new Date().toISOString().slice(0, 19),
+        })
+        unread.SELLER.inventory = 0
+        unread.SELLER.products += 1
+        unread.ADMIN.products += 1
+        saveDb(db)
+        return option
+      }
+    }
+    throw new Error('해당 상품 옵션을 찾을 수 없습니다.')
   }
 
-  for (const product of db.products) {
-    const option = product.options.find(o => o.id === input.optionId)
-    if (option) {
-      const nextQty = option.stockQuantity + input.changeQty
-      if (nextQty < 0) {
-        throw new Error('조정 후 재고 수량은 0 미만이 될 수 없습니다.')
-      }
-      option.stockQuantity = nextQty
-      db.stockHistory.unshift({
-        id: db.nextIds.history++,
-        optionId: option.id,
-        productId: product.id,
-        productName: product.name,
-        productCode: product.productCode,
-        colorName: option.colorName,
-        sizeLabel: option.sizeLabel,
-        changeQty: input.changeQty,
-        quantityAfter: nextQty,
+  return apiRequest<ProductOption>(
+    `/api/seller/options/${input.optionId}/stock`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
         type: input.type,
-        memo: input.memo?.trim() || (input.type === 'IN' ? '정기 재고 입고' : '재고 실사 조정'),
-        createdAt: new Date().toISOString().slice(0, 19),
-      })
-      unread.SELLER.inventory = 0
-      unread.SELLER.products += 1
-      unread.ADMIN.products += 1
-      saveDb(db)
-      return option
-    }
-  }
-  throw new Error('해당 상품 옵션을 찾을 수 없습니다.')
+        changeQty: input.changeQty,
+        memo: input.memo?.trim(),
+      }),
+    },
+  )
 }
 
-export function getStockHistory(
+export async function getStockHistory(
   sellerId: number = CURRENT_SELLER_ID,
   optionId?: number,
-): StockHistoryItem[] {
-  const db = loadDb()
-  const sellerProductIds = new Set(
-    db.products.filter(p => p.sellerId === sellerId).map(p => p.id),
-  )
-  return db.stockHistory.filter(
-    item =>
-      sellerProductIds.has(item.productId) &&
-      (optionId === undefined || item.optionId === optionId),
-  )
+): Promise<StockHistoryItem[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const sellerProductIds = new Set(
+      db.products.filter(p => p.sellerId === sellerId).map(p => p.id),
+    )
+    return db.stockHistory.filter(
+      item =>
+        sellerProductIds.has(item.productId) &&
+        (optionId === undefined || item.optionId === optionId),
+    )
+  }
+
+  const endpoint =
+    optionId !== undefined
+      ? `/api/seller/options/${optionId}/stock-history`
+      : '/api/seller/stock-history'
+  return apiRequest<StockHistoryItem[]>(endpoint)
 }
 
 // ============================================================================
 // SELLER: ORDER / SHIPMENT APIs
 // ============================================================================
 
-export function getSellerShipments(sellerId: number = CURRENT_SELLER_ID): SellerShipment[] {
-  const db = loadDb()
-  return db.shipments
-    .filter(s => s.sellerId === sellerId)
-    .sort((a, b) => b.id - a.id)
+export async function getSellerShipments(
+  sellerId: number = CURRENT_SELLER_ID,
+): Promise<SellerShipment[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    return db.shipments
+      .filter(s => s.sellerId === sellerId)
+      .sort((a, b) => b.id - a.id)
+  }
+
+  return apiRequest<SellerShipment[]>('/api/seller/shipments')
 }
 
 const VALID_NEXT_SHIPMENT_STATUS: Record<ShipmentStatus, ShipmentStatus[]> = {
@@ -1578,321 +1803,401 @@ const VALID_NEXT_SHIPMENT_STATUS: Record<ShipmentStatus, ShipmentStatus[]> = {
   CANCELED: [],
 }
 
-export function updateShipmentStatus(
+export async function updateShipmentStatus(
   shipmentId: number,
   nextStatus: ShipmentStatus,
-): SellerShipment {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const shipment = db.shipments.find(s => s.id === shipmentId)
-  if (!shipment) {
-    throw new Error('배송 내역을 찾을 수 없습니다.')
-  }
-  if (shipment.status === 'CONFIRMED' || shipment.status === 'CANCELED') {
-    throw new Error('이미 구매확정되었거나 취소된 주문은 상태를 변경할 수 없습니다.')
-  }
+): Promise<SellerShipment> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const shipment = db.shipments.find(s => s.id === shipmentId)
+    if (!shipment) {
+      throw new Error('배송 내역을 찾을 수 없습니다.')
+    }
+    if (shipment.status === 'CONFIRMED' || shipment.status === 'CANCELED') {
+      throw new Error('이미 구매확정되었거나 취소된 주문은 상태를 변경할 수 없습니다.')
+    }
 
-  const allowed = VALID_NEXT_SHIPMENT_STATUS[shipment.status]
-  if (!allowed.includes(nextStatus)) {
-    throw new Error(
-      `현재 상태에서 선택한 상태로 바로 변경할 수 없습니다.`,
-    )
-  }
+    const allowed = VALID_NEXT_SHIPMENT_STATUS[shipment.status]
+    if (!allowed.includes(nextStatus)) {
+      throw new Error(
+        `현재 상태에서 선택한 상태로 바로 변경할 수 없습니다.`,
+      )
+    }
 
-  const now = new Date().toISOString().slice(0, 19)
-  shipment.status = nextStatus
-  unread.SELLER.orders = 0
+    const now = new Date().toISOString().slice(0, 19)
+    shipment.status = nextStatus
+    unread.SELLER.orders = 0
 
-  if (nextStatus === 'CONFIRMED') {
-    shipment.confirmedAt = now
-    unread.SELLER.stats += 1
-    unread.ADMIN.stats += 1
-  } else if (nextStatus === 'CANCELED') {
-    shipment.canceledAt = now
-    // 주문 취소 시 재고 복원 + STOCK_HISTORY(CANCEL) 기록
-    for (const item of shipment.items) {
-      for (const product of db.products) {
-        const opt = product.options.find(o => o.id === item.optionId)
-        if (opt) {
-          opt.stockQuantity += item.quantity
-          db.stockHistory.unshift({
-            id: db.nextIds.history++,
-            optionId: opt.id,
-            productId: product.id,
-            productName: product.name,
-            productCode: product.productCode,
-            colorName: opt.colorName,
-            sizeLabel: opt.sizeLabel,
-            changeQty: item.quantity,
-            quantityAfter: opt.stockQuantity,
-            type: 'CANCEL',
-            orderItemId: item.id,
-            memo: `주문 취소 재고 복원 (${shipment.orderNumber})`,
-            createdAt: now,
-          })
+    if (nextStatus === 'CONFIRMED') {
+      shipment.confirmedAt = now
+      unread.SELLER.stats += 1
+      unread.ADMIN.stats += 1
+    } else if (nextStatus === 'CANCELED') {
+      shipment.canceledAt = now
+      // 주문 취소 시 재고 복원 + STOCK_HISTORY(CANCEL) 기록
+      for (const item of shipment.items) {
+        for (const product of db.products) {
+          const opt = product.options.find(o => o.id === item.optionId)
+          if (opt) {
+            opt.stockQuantity += item.quantity
+            db.stockHistory.unshift({
+              id: db.nextIds.history++,
+              optionId: opt.id,
+              productId: product.id,
+              productName: product.name,
+              productCode: product.productCode,
+              colorName: opt.colorName,
+              sizeLabel: opt.sizeLabel,
+              changeQty: item.quantity,
+              quantityAfter: opt.stockQuantity,
+              type: 'CANCEL',
+              orderItemId: item.id,
+              memo: `주문 취소 재고 복원 (${shipment.orderNumber})`,
+              createdAt: now,
+            })
+          }
         }
       }
+      unread.SELLER.inventory += 1
+      unread.SELLER.products += 1
+      unread.ADMIN.products += 1
+      unread.SELLER.stats += 1
+      unread.ADMIN.stats += 1
     }
-    unread.SELLER.inventory += 1
-    unread.SELLER.products += 1
-    unread.ADMIN.products += 1
-    unread.SELLER.stats += 1
-    unread.ADMIN.stats += 1
+
+    saveDb(db)
+    return shipment
   }
 
-  saveDb(db)
-  return shipment
+  return apiRequest<SellerShipment>(
+    `/api/seller/shipments/${shipmentId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status: nextStatus }),
+    },
+  )
 }
 
 // ============================================================================
 // ADMIN: BRAND, PRODUCT, USER MANAGEMENT APIs
 // ============================================================================
 
-export function getAdminBrands(): Brand[] {
-  const db = loadDb()
-  return [...db.brands].sort((a, b) => b.id - a.id)
+export async function getAdminBrands(): Promise<Brand[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    return [...db.brands].sort((a, b) => b.id - a.id)
+  }
+
+  return apiRequest<Brand[]>('/api/admin/brands')
 }
 
-export function updateAdminBrandStatus(
+export async function updateAdminBrandStatus(
   brandId: number,
   status: BrandStatus,
   rejectReason?: string,
-): Brand {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const brand = db.brands.find(b => b.id === brandId)
-  if (!brand) {
-    throw new Error('브랜드를 찾을 수 없습니다.')
+): Promise<Brand> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const brand = db.brands.find(b => b.id === brandId)
+    if (!brand) {
+      throw new Error('브랜드를 찾을 수 없습니다.')
+    }
+    if (status === 'REJECTED' && !rejectReason?.trim()) {
+      throw new Error('브랜드 거절 사유를 입력해 주세요.')
+    }
+    brand.status = status
+    brand.rejectReason = status === 'REJECTED' ? rejectReason?.trim() : undefined
+    unread.ADMIN.brands = 0
+    unread.SELLER.brands += 1
+    saveDb(db)
+    return brand
   }
-  if (status === 'REJECTED' && !rejectReason?.trim()) {
-    throw new Error('브랜드 거절 사유를 입력해 주세요.')
-  }
-  brand.status = status
-  brand.rejectReason = status === 'REJECTED' ? rejectReason?.trim() : undefined
-  unread.ADMIN.brands = 0
-  unread.SELLER.brands += 1
-  saveDb(db)
-  return brand
+
+  return apiRequest<Brand>(`/api/admin/brands/${brandId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      status,
+      rejectReason: status === 'REJECTED' ? rejectReason?.trim() : undefined,
+    }),
+  })
 }
 
-export function getAdminProducts(): Product[] {
-  const db = loadDb()
-  return db.products
-    .filter(p => p.status !== 'DELETED')
-    .sort((a, b) => b.id - a.id)
+export async function getAdminProducts(): Promise<Product[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    return db.products
+      .filter(p => p.status !== 'DELETED')
+      .sort((a, b) => b.id - a.id)
+  }
+
+  return apiRequest<Product[]>('/api/admin/products')
 }
 
-export function updateAdminProductStatus(
+export async function updateAdminProductStatus(
   productId: number,
   status: ProductStatus,
   rejectReason?: string,
-): Product {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const product = db.products.find(p => p.id === productId)
-  if (!product) {
-    throw new Error('상품을 찾을 수 없습니다.')
+): Promise<Product> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const product = db.products.find(p => p.id === productId)
+    if (!product) {
+      throw new Error('상품을 찾을 수 없습니다.')
+    }
+    if (status === 'REJECTED' && !rejectReason?.trim()) {
+      throw new Error('상품 거절 사유를 입력해 주세요.')
+    }
+    product.status = status
+    product.rejectReason = status === 'REJECTED' ? rejectReason?.trim() : undefined
+    unread.ADMIN.products = 0
+    unread.SELLER.products += 1
+    saveDb(db)
+    return product
   }
-  if (status === 'REJECTED' && !rejectReason?.trim()) {
-    throw new Error('상품 거절 사유를 입력해 주세요.')
-  }
-  product.status = status
-  product.rejectReason = status === 'REJECTED' ? rejectReason?.trim() : undefined
-  unread.ADMIN.products = 0
-  unread.SELLER.products += 1
-  saveDb(db)
-  return product
+
+  return apiRequest<Product>(`/api/admin/products/${productId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      status,
+      rejectReason: status === 'REJECTED' ? rejectReason?.trim() : undefined,
+    }),
+  })
 }
 
-export function getAdminUsers(): UserItem[] {
-  const db = loadDb()
-  return [...db.users].sort((a, b) => a.id - b.id)
+export async function getAdminUsers(): Promise<UserItem[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    return [...db.users].sort((a, b) => a.id - b.id)
+  }
+
+  return apiRequest<UserItem[]>('/api/admin/users')
 }
 
-export function updateAdminUserStatus(
+export async function updateAdminUserStatus(
   userId: number,
   nextStatus: 'ACTIVE' | 'SUSPENDED',
-): UserItem {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const user = db.users.find(u => u.id === userId)
-  if (!user) {
-    throw new Error('회원을 찾을 수 없습니다.')
+): Promise<UserItem> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const user = db.users.find(u => u.id === userId)
+    if (!user) {
+      throw new Error('회원을 찾을 수 없습니다.')
+    }
+    if (user.role === 'ADMIN') {
+      throw new Error('관리자 계정은 정지하거나 변경할 수 없습니다.')
+    }
+    if (user.status === 'WITHDRAWN') {
+      throw new Error('이미 탈퇴 처리된 회원입니다.')
+    }
+    user.status = nextStatus
+    unread.ADMIN.users = 0
+    saveDb(db)
+    return user
   }
-  if (user.role === 'ADMIN') {
-    throw new Error('관리자 계정은 정지하거나 변경할 수 없습니다.')
-  }
-  if (user.status === 'WITHDRAWN') {
-    throw new Error('이미 탈퇴 처리된 회원입니다.')
-  }
-  user.status = nextStatus
-  unread.ADMIN.users = 0
-  saveDb(db)
-  return user
+
+  return apiRequest<UserItem>(`/api/admin/users/${userId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: nextStatus }),
+  })
 }
 
-export function withdrawAdminUser(userId: number): UserItem {
-  const db = loadDb()
-  const unread = ensureUnreadChanges(db)
-  const user = db.users.find(u => u.id === userId)
-  if (!user) {
-    throw new Error('회원을 찾을 수 없습니다.')
-  }
-  if (user.role === 'ADMIN') {
-    throw new Error('관리자 계정은 삭제(탈퇴) 처리할 수 없습니다.')
-  }
-  if (user.status === 'WITHDRAWN') {
-    throw new Error('이미 탈퇴 처리된 회원입니다.')
-  }
+export async function withdrawAdminUser(userId: number): Promise<UserItem> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const unread = ensureUnreadChanges(db)
+    const user = db.users.find(u => u.id === userId)
+    if (!user) {
+      throw new Error('회원을 찾을 수 없습니다.')
+    }
+    if (user.role === 'ADMIN') {
+      throw new Error('관리자 계정은 삭제(탈퇴) 처리할 수 없습니다.')
+    }
+    if (user.status === 'WITHDRAWN') {
+      throw new Error('이미 탈퇴 처리된 회원입니다.')
+    }
 
-  const now = new Date().toISOString().slice(0, 19)
-  user.status = 'WITHDRAWN'
-  user.withdrawnAt = now
-  user.name = `탈퇴회원#${user.id}`
-  user.email = `withdrawn_${user.id}@deleted.seam.kr`
-  unread.ADMIN.users = 0
+    const now = new Date().toISOString().slice(0, 19)
+    user.status = 'WITHDRAWN'
+    user.withdrawnAt = now
+    user.name = `탈퇴회원#${user.id}`
+    user.email = `withdrawn_${user.id}@deleted.seam.kr`
+    unread.ADMIN.users = 0
 
-  // 판매자인 경우 소속 브랜드 제거 및 소속 상품 판매 종료(DELETED) 처리
-  if (user.role === 'SELLER') {
-    const removedBrandsCount = db.brands.filter(b => b.sellerId === user.id).length
-    db.brands = db.brands.filter(b => b.sellerId !== user.id)
-    let deletedProductsCount = 0
-    for (const product of db.products) {
-      if (product.sellerId === user.id && product.status !== 'DELETED') {
-        product.status = 'DELETED'
-        deletedProductsCount += 1
+    // 판매자인 경우 소속 브랜드 제거 및 소속 상품 판매 종료(DELETED) 처리
+    if (user.role === 'SELLER') {
+      const removedBrandsCount = db.brands.filter(b => b.sellerId === user.id).length
+      db.brands = db.brands.filter(b => b.sellerId !== user.id)
+      let deletedProductsCount = 0
+      for (const product of db.products) {
+        if (product.sellerId === user.id && product.status !== 'DELETED') {
+          product.status = 'DELETED'
+          deletedProductsCount += 1
+        }
+      }
+      if (removedBrandsCount > 0) {
+        unread.ADMIN.brands += removedBrandsCount
+        unread.SELLER.brands += removedBrandsCount
+      }
+      if (deletedProductsCount > 0) {
+        unread.ADMIN.products += deletedProductsCount
+        unread.SELLER.products += deletedProductsCount
       }
     }
-    if (removedBrandsCount > 0) {
-      unread.ADMIN.brands += removedBrandsCount
-      unread.SELLER.brands += removedBrandsCount
-    }
-    if (deletedProductsCount > 0) {
-      unread.ADMIN.products += deletedProductsCount
-      unread.SELLER.products += deletedProductsCount
-    }
+
+    saveDb(db)
+    return user
   }
 
-  saveDb(db)
-  return user
+  return apiRequest<UserItem>(`/api/admin/users/${userId}`, {
+    method: 'DELETE',
+  })
 }
 
 // ============================================================================
 // STATS APIs (SELLER & ADMIN)
 // ============================================================================
 
-export function getSalesStats(
+export async function getSalesStats(
   period: StatPeriod,
   scope: 'SELLER' | 'ADMIN',
-): SalesStatPoint[] {
-  const db = loadDb()
-  const activeShipments = db.shipments.filter(
-    s =>
-      s.status !== 'CANCELED' &&
-      (scope === 'ADMIN' || s.sellerId === CURRENT_SELLER_ID),
-  )
+  fromDate?: string,
+  toDate?: string,
+): Promise<SalesStatPoint[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const activeShipments = db.shipments.filter(
+      s =>
+        s.status !== 'CANCELED' &&
+        (scope === 'ADMIN' || s.sellerId === CURRENT_SELLER_ID),
+    )
 
-  const recentActualRevenue = activeShipments.reduce((acc, s) => acc + s.totalAmount, 0)
-  const recentActualQty = activeShipments.reduce(
-    (acc, s) => acc + s.items.reduce((sum, i) => sum + i.quantity, 0),
-    0,
-  )
+    const recentActualRevenue = activeShipments.reduce((acc, s) => acc + s.totalAmount, 0)
+    const recentActualQty = activeShipments.reduce(
+      (acc, s) => acc + s.items.reduce((sum, i) => sum + i.quantity, 0),
+      0,
+    )
 
-  const multiplier = scope === 'ADMIN' ? 1.85 : 1
+    const multiplier = scope === 'ADMIN' ? 1.85 : 1
 
-  if (period === 'daily') {
-    return [
-      { label: '11/04', dateKey: '2026-11-04', salesCount: Math.round(4 * multiplier), revenue: Math.round(520000 * multiplier), orderCount: Math.round(3 * multiplier) },
-      { label: '11/05', dateKey: '2026-11-05', salesCount: Math.round(6 * multiplier), revenue: Math.round(784000 * multiplier), orderCount: Math.round(5 * multiplier) },
-      { label: '11/06', dateKey: '2026-11-06', salesCount: Math.round(3 * multiplier), revenue: Math.round(396000 * multiplier), orderCount: Math.round(3 * multiplier) },
-      { label: '11/07', dateKey: '2026-11-07', salesCount: Math.round(7 * multiplier), revenue: Math.round(912000 * multiplier), orderCount: Math.round(6 * multiplier) },
-      { label: '11/08', dateKey: '2026-11-08', salesCount: Math.round(5 * multiplier), revenue: Math.round(645000 * multiplier), orderCount: Math.round(4 * multiplier) },
-      { label: '11/09', dateKey: '2026-11-09', salesCount: Math.round(8 * multiplier), revenue: Math.round(1080000 * multiplier), orderCount: Math.round(6 * multiplier) },
-      {
-        label: '11/10 (오늘)',
-        dateKey: '2026-11-10',
-        salesCount: Math.max(2, recentActualQty),
-        revenue: Math.max(178000, Math.round(recentActualRevenue * 0.45 * multiplier)),
-        orderCount: activeShipments.length,
-      },
-    ]
-  }
-
-  if (period === 'weekly') {
-    return [
-      { label: '10월 2주', dateKey: '2026-W41', salesCount: Math.round(24 * multiplier), revenue: Math.round(3120000 * multiplier), orderCount: Math.round(19 * multiplier) },
-      { label: '10월 3주', dateKey: '2026-W42', salesCount: Math.round(31 * multiplier), revenue: Math.round(4290000 * multiplier), orderCount: Math.round(25 * multiplier) },
-      { label: '10월 4주', dateKey: '2026-W43', salesCount: Math.round(29 * multiplier), revenue: Math.round(3890000 * multiplier), orderCount: Math.round(22 * multiplier) },
-      { label: '11월 1주', dateKey: '2026-W44', salesCount: Math.round(38 * multiplier), revenue: Math.round(5140000 * multiplier), orderCount: Math.round(31 * multiplier) },
-      { label: '11월 2주 (이번주)', dateKey: '2026-W45', salesCount: Math.round(18 * multiplier) + recentActualQty, revenue: Math.round(2450000 * multiplier) + recentActualRevenue, orderCount: Math.round(14 * multiplier) + activeShipments.length },
-    ]
-  }
-
-  return [
-    { label: '2026.07', dateKey: '2026-07', salesCount: Math.round(82 * multiplier), revenue: Math.round(9840000 * multiplier), orderCount: Math.round(68 * multiplier) },
-    { label: '2026.08', dateKey: '2026-08', salesCount: Math.round(95 * multiplier), revenue: Math.round(11420000 * multiplier), orderCount: Math.round(79 * multiplier) },
-    { label: '2026.09', dateKey: '2026-09', salesCount: Math.round(118 * multiplier), revenue: Math.round(15890000 * multiplier), orderCount: Math.round(96 * multiplier) },
-    { label: '2026.10', dateKey: '2026-10', salesCount: Math.round(142 * multiplier), revenue: Math.round(19650000 * multiplier), orderCount: Math.round(115 * multiplier) },
-    { label: '2026.11 (이번달)', dateKey: '2026-11', salesCount: Math.round(52 * multiplier) + recentActualQty, revenue: Math.round(7120000 * multiplier) + recentActualRevenue, orderCount: Math.round(42 * multiplier) + activeShipments.length },
-  ]
-}
-
-export function getTopProducts(scope: 'SELLER' | 'ADMIN'): TopProductStat[] {
-  const db = loadDb()
-  const products = db.products.filter(
-    p =>
-      p.status !== 'DELETED' &&
-      (scope === 'ADMIN' || p.sellerId === CURRENT_SELLER_ID),
-  )
-
-  const salesByProduct = new Map<number, { qty: number; rev: number }>()
-  for (const shipment of db.shipments) {
-    if (shipment.status === 'CANCELED') continue
-    for (const item of shipment.items) {
-      const prev = salesByProduct.get(item.productId) ?? { qty: 0, rev: 0 }
-      salesByProduct.set(item.productId, {
-        qty: prev.qty + item.quantity,
-        rev: prev.rev + item.quantity * item.unitPrice,
-      })
+    if (period === 'daily') {
+      return [
+        { label: '11/04', dateKey: '2026-11-04', salesCount: Math.round(4 * multiplier), revenue: Math.round(520000 * multiplier), orderCount: Math.round(3 * multiplier) },
+        { label: '11/05', dateKey: '2026-11-05', salesCount: Math.round(6 * multiplier), revenue: Math.round(784000 * multiplier), orderCount: Math.round(5 * multiplier) },
+        { label: '11/06', dateKey: '2026-11-06', salesCount: Math.round(3 * multiplier), revenue: Math.round(396000 * multiplier), orderCount: Math.round(3 * multiplier) },
+        { label: '11/07', dateKey: '2026-11-07', salesCount: Math.round(7 * multiplier), revenue: Math.round(912000 * multiplier), orderCount: Math.round(6 * multiplier) },
+        { label: '11/08', dateKey: '2026-11-08', salesCount: Math.round(5 * multiplier), revenue: Math.round(645000 * multiplier), orderCount: Math.round(4 * multiplier) },
+        { label: '11/09', dateKey: '2026-11-09', salesCount: Math.round(8 * multiplier), revenue: Math.round(1080000 * multiplier), orderCount: Math.round(6 * multiplier) },
+        {
+          label: '11/10 (오늘)',
+          dateKey: '2026-11-10',
+          salesCount: Math.max(2, recentActualQty),
+          revenue: Math.max(178000, Math.round(recentActualRevenue * 0.45 * multiplier)),
+          orderCount: activeShipments.length,
+        },
+      ]
     }
+
+    if (period === 'weekly') {
+      return [
+        { label: '10월 2주', dateKey: '2026-W41', salesCount: Math.round(24 * multiplier), revenue: Math.round(3120000 * multiplier), orderCount: Math.round(19 * multiplier) },
+        { label: '10월 3주', dateKey: '2026-W42', salesCount: Math.round(31 * multiplier), revenue: Math.round(4290000 * multiplier), orderCount: Math.round(25 * multiplier) },
+        { label: '10월 4주', dateKey: '2026-W43', salesCount: Math.round(29 * multiplier), revenue: Math.round(3890000 * multiplier), orderCount: Math.round(22 * multiplier) },
+        { label: '11월 1주', dateKey: '2026-W44', salesCount: Math.round(38 * multiplier), revenue: Math.round(5140000 * multiplier), orderCount: Math.round(31 * multiplier) },
+        { label: '11월 2주 (이번주)', dateKey: '2026-W45', salesCount: Math.round(18 * multiplier) + recentActualQty, revenue: Math.round(2450000 * multiplier) + recentActualRevenue, orderCount: Math.round(14 * multiplier) + activeShipments.length },
+      ]
+    }
+
+    return [
+      { label: '2026.07', dateKey: '2026-07', salesCount: Math.round(82 * multiplier), revenue: Math.round(9840000 * multiplier), orderCount: Math.round(68 * multiplier) },
+      { label: '2026.08', dateKey: '2026-08', salesCount: Math.round(95 * multiplier), revenue: Math.round(11420000 * multiplier), orderCount: Math.round(79 * multiplier) },
+      { label: '2026.09', dateKey: '2026-09', salesCount: Math.round(118 * multiplier), revenue: Math.round(15890000 * multiplier), orderCount: Math.round(96 * multiplier) },
+      { label: '2026.10', dateKey: '2026-10', salesCount: Math.round(142 * multiplier), revenue: Math.round(19650000 * multiplier), orderCount: Math.round(115 * multiplier) },
+      { label: '2026.11 (이번달)', dateKey: '2026-11', salesCount: Math.round(52 * multiplier) + recentActualQty, revenue: Math.round(7120000 * multiplier) + recentActualRevenue, orderCount: Math.round(42 * multiplier) + activeShipments.length },
+    ]
   }
 
-  return products
-    .map((p, idx) => {
-      const actual = salesByProduct.get(p.id) ?? { qty: 0, rev: 0 }
-      const baseQty = p.status === 'ON_SALE' || p.status === 'SOLD_OUT' ? (5 - (idx % 4)) * 6 : 0
-      const salesCount = actual.qty + baseQty
-      const revenue = actual.rev + baseQty * p.price
-      const currentStock = p.options.reduce((sum, o) => sum + o.stockQuantity, 0)
-      return {
-        productId: p.id,
-        productName: p.name,
-        productCode: p.productCode,
-        brandName: p.brandName,
-        categoryName: `${p.parentCategoryName} > ${p.categoryName}`,
-        salesCount,
-        revenue,
-        currentStock,
-      }
-    })
-    .sort((a, b) => b.revenue - a.revenue)
+  const params = new URLSearchParams({ period })
+  if (fromDate) params.set('from', fromDate)
+  if (toDate) params.set('to', toDate)
+  const basePath =
+    scope === 'ADMIN' ? '/api/admin/stats/sales' : '/api/seller/stats/sales'
+  return apiRequest<SalesStatPoint[]>(`${basePath}?${params.toString()}`)
 }
 
-export function getBrandSalesSummaries(): BrandSalesSummary[] {
-  const db = loadDb()
-  const topProducts = getTopProducts('ADMIN')
-  return db.brands
-    .filter(b => b.status === 'APPROVED')
-    .map(b => {
-      const brandProducts = topProducts.filter(tp => tp.brandName === b.name)
-      return {
-        brandId: b.id,
-        brandName: b.name,
-        sellerName: b.sellerName,
-        productCount: brandProducts.length,
-        salesCount: brandProducts.reduce((s, p) => s + p.salesCount, 0),
-        revenue: brandProducts.reduce((s, p) => s + p.revenue, 0),
+export async function getTopProducts(
+  scope: 'SELLER' | 'ADMIN',
+): Promise<TopProductStat[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const products = db.products.filter(
+      p =>
+        p.status !== 'DELETED' &&
+        (scope === 'ADMIN' || p.sellerId === CURRENT_SELLER_ID),
+    )
+
+    const salesByProduct = new Map<number, { qty: number; rev: number }>()
+    for (const shipment of db.shipments) {
+      if (shipment.status === 'CANCELED') continue
+      for (const item of shipment.items) {
+        const prev = salesByProduct.get(item.productId) ?? { qty: 0, rev: 0 }
+        salesByProduct.set(item.productId, {
+          qty: prev.qty + item.quantity,
+          rev: prev.rev + item.quantity * item.unitPrice,
+        })
       }
-    })
-    .sort((a, b) => b.revenue - a.revenue)
+    }
+
+    return products
+      .map((p, idx) => {
+        const actual = salesByProduct.get(p.id) ?? { qty: 0, rev: 0 }
+        const baseQty = p.status === 'ON_SALE' || p.status === 'SOLD_OUT' ? (5 - (idx % 4)) * 6 : 0
+        const salesCount = actual.qty + baseQty
+        const revenue = actual.rev + baseQty * p.price
+        const currentStock = p.options.reduce((sum, o) => sum + o.stockQuantity, 0)
+        return {
+          productId: p.id,
+          productName: p.name,
+          productCode: p.productCode,
+          brandName: p.brandName,
+          categoryName: `${p.parentCategoryName} > ${p.categoryName}`,
+          salesCount,
+          revenue,
+          currentStock,
+        }
+      })
+      .sort((a, b) => b.revenue - a.revenue)
+  }
+
+  const endpoint =
+    scope === 'ADMIN'
+      ? '/api/admin/stats/products/top'
+      : '/api/seller/stats/products/top'
+  return apiRequest<TopProductStat[]>(endpoint)
+}
+
+export async function getBrandSalesSummaries(): Promise<BrandSalesSummary[]> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const topProducts = await getTopProducts('ADMIN')
+    return db.brands
+      .filter(b => b.status === 'APPROVED')
+      .map(b => {
+        const brandProducts = topProducts.filter(tp => tp.brandName === b.name)
+        return {
+          brandId: b.id,
+          brandName: b.name,
+          sellerName: b.sellerName,
+          productCount: brandProducts.length,
+          salesCount: brandProducts.reduce((s, p) => s + p.salesCount, 0),
+          revenue: brandProducts.reduce((s, p) => s + p.revenue, 0),
+        }
+      })
+      .sort((a, b) => b.revenue - a.revenue)
+  }
+
+  return apiRequest<BrandSalesSummary[]>('/api/admin/stats/brands')
 }

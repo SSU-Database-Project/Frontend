@@ -13,7 +13,7 @@ export default function RoleHomePage({ role, onBack }: { role: Role; onBack: () 
   return (
     <>
       <PageHeading title={title} description={description} />
-      <button className="back-link" type="button" onClick={onBack}><Icon name="back" />역할 다시 선택</button>
+      <button className="back-link" type="button" onClick={onBack}><Icon name="back" />로그인으로 돌아가기</button>
     </>
   )
 }

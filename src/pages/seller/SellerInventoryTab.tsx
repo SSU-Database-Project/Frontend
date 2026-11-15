@@ -59,21 +59,22 @@ export default function SellerInventoryTab({
     setHistoryFilterOptionId(optionId)
   }
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     try {
       const parsedQty = Number(changeQty)
       if (!changeQty.trim() || Number.isNaN(parsedQty) || !Number.isInteger(parsedQty) || parsedQty === 0) {
         throw new Error('변동 수량은 0이 아닌 정수를 입력해 주세요.')
       }
-      const updated = adjustOptionStock({
-        optionId: selectedOptionId,
+      const targetOptionId = selectedOptionId || (allOptions[0]?.id ?? 0)
+      const updated = await adjustOptionStock({
+        optionId: targetOptionId,
         type: adjustType,
         changeQty: parsedQty,
         memo,
       })
       setMemo('')
-      onRefresh()
+      await onRefresh()
       onNotify(
         'success',
         `옵션 [${updated.colorName} / ${updated.sizeLabel}] 재고가 ${updated.stockQuantity}개로 갱신되었습니다.`,
@@ -123,7 +124,7 @@ export default function SellerInventoryTab({
             <select
               id="stock-option-select"
               className="ws-select"
-              value={selectedOptionId}
+              value={selectedOptionId || (allOptions[0]?.id ?? 0)}
               onChange={e => setSelectedOptionId(Number(e.target.value))}
             >
               {allOptions.map(opt => (

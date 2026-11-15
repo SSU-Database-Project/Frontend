@@ -16,11 +16,11 @@ export default function App() {
   const openRoles = () => setScreen('roles')
 
   if (screen === 'SELLER') {
-    return <SellerWorkspace onBack={openRoles} />
+    return <SellerWorkspace onBack={openLogin} />
   }
 
   if (screen === 'ADMIN') {
-    return <AdminWorkspace onBack={openRoles} />
+    return <AdminWorkspace onBack={openLogin} />
   }
 
   function renderPage() {
@@ -32,7 +32,7 @@ export default function App() {
       case 'roles':
         return <RoleSelectionPage onBack={openLogin} onContinue={setScreen} />
       default:
-        return <RoleHomePage role={screen} onBack={openRoles} />
+        return <RoleHomePage role={screen} onBack={openLogin} />
     }
   }
 

@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { IS_MOCK_MODE } from '../services/mockStore'
 import Icon, { type IconName } from './Icon'
 import type { Role } from '../types/role'
 import './WorkspaceLayout.css'
@@ -65,18 +66,20 @@ export default function WorkspaceLayout<T extends string>({
         </div>
 
         <div className="ws-header-actions">
-          <button
-            type="button"
-            className="ws-ghost-btn"
-            onClick={onResetDemoData}
-            title="초기 시연 데이터로 복원"
-          >
-            <Icon name="refresh" />
-            <span>시연 데이터 초기화</span>
-          </button>
+          {IS_MOCK_MODE && (
+            <button
+              type="button"
+              className="ws-ghost-btn"
+              onClick={onResetDemoData}
+              title="초기 시연 데이터로 복원"
+            >
+              <Icon name="refresh" />
+              <span>시연 데이터 초기화</span>
+            </button>
+          )}
           <button type="button" className="ws-switch-role-btn" onClick={onBackToRoles}>
             <Icon name="back" />
-            <span>역할 다시 선택</span>
+            <span>로그인으로 돌아가기</span>
           </button>
         </div>
       </header>

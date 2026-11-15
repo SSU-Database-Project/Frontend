@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import WorkspaceLayout, { type WorkspaceNavItem } from '../../components/WorkspaceLayout'
 import {
   clearSellerTabBadge,
@@ -9,6 +9,12 @@ import {
   getUnreadChanges,
   resetMockStore,
 } from '../../services/mockStore'
+import type {
+  Brand,
+  Product,
+  SellerShipment,
+  StockHistoryItem,
+} from '../../types/commerce'
 import SellerBrandsTab from './SellerBrandsTab'
 import SellerInventoryTab from './SellerInventoryTab'
 import SellerOrdersTab from './SellerOrdersTab'
@@ -22,7 +28,11 @@ export default function SellerWorkspace({ onBack }: { onBack: () => void }) {
     clearSellerTabBadge('brands')
     return 'brands'
   })
-  const [version, setVersion] = useState(0)
+  const [brands, setBrands] = useState<Brand[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [stockHistory, setStockHistory] = useState<StockHistoryItem[]>([])
+  const [shipments, setShipments] = useState<SellerShipment[]>([])
+  const [unread, setUnread] = useState(() => getUnreadChanges().SELLER)
   const [banner, setBanner] = useState<{
     type: 'success' | 'error' | 'info'
     text: string
@@ -31,21 +41,62 @@ export default function SellerWorkspace({ onBack }: { onBack: () => void }) {
   const [preselectedBrandId, setPreselectedBrandId] = useState<number | null>(null)
   const [preselectedProductId, setPreselectedProductId] = useState<number | null>(null)
 
+  const refresh = useCallback(async () => {
+    try {
+      const [nextBrands, nextProducts, nextHistory, nextShipments] =
+        await Promise.all([
+          getSellerBrands(),
+          getSellerProducts(),
+          getStockHistory(),
+          getSellerShipments(),
+        ])
+      setBrands(nextBrands)
+      setProducts(nextProducts)
+      setStockHistory(nextHistory)
+      setShipments(nextShipments)
+      setUnread(getUnreadChanges().SELLER)
+    } catch (err) {
+      setBanner({
+        type: 'error',
+        text:
+          err instanceof Error
+            ? err.message
+            : '백엔드 서버에서 판매자 데이터를 불러오지 못했습니다.',
+      })
+    }
+  }, [])
+
   useEffect(() => {
     clearSellerTabBadge(activeTab)
+    let active = true
+    void Promise.all([
+      getSellerBrands(),
+      getSellerProducts(),
+      getStockHistory(),
+      getSellerShipments(),
+    ])
+      .then(([nextBrands, nextProducts, nextHistory, nextShipments]) => {
+        if (!active) return
+        setBrands(nextBrands)
+        setProducts(nextProducts)
+        setStockHistory(nextHistory)
+        setShipments(nextShipments)
+        setUnread(getUnreadChanges().SELLER)
+      })
+      .catch(err => {
+        if (!active) return
+        setBanner({
+          type: 'error',
+          text:
+            err instanceof Error
+              ? err.message
+              : '백엔드 서버에서 판매자 데이터를 불러오지 못했습니다.',
+        })
+      })
+    return () => {
+      active = false
+    }
   }, [activeTab])
-
-  // version 의존성을 통해 LocalStorage 변경 시 즉시 리렌더링
-  void version
-  const brands = getSellerBrands()
-  const products = getSellerProducts()
-  const stockHistory = getStockHistory()
-  const shipments = getSellerShipments()
-  const unread = getUnreadChanges().SELLER
-
-  function refresh() {
-    setVersion(v => v + 1)
-  }
 
   function notify(type: 'success' | 'error' | 'info', text: string) {
     setBanner({ type, text })
@@ -54,7 +105,7 @@ export default function SellerWorkspace({ onBack }: { onBack: () => void }) {
   function handleResetDemo() {
     resetMockStore()
     clearSellerTabBadge(activeTab)
-    refresh()
+    void refresh()
     notify('info', '시연 데이터가 초기 상태로 복원되었습니다.')
   }
 
@@ -109,11 +160,11 @@ export default function SellerWorkspace({ onBack }: { onBack: () => void }) {
         setPreselectedProductId(null)
         setActiveTab(tab)
         setBanner(null)
-        refresh()
+        void refresh()
       }}
       onAcknowledgeActiveTab={() => {
         clearSellerTabBadge(activeTab)
-        refresh()
+        void refresh()
       }}
       onBackToRoles={onBack}
       onResetDemoData={handleResetDemo}
@@ -129,7 +180,7 @@ export default function SellerWorkspace({ onBack }: { onBack: () => void }) {
             clearSellerTabBadge('products')
             setPreselectedBrandId(targetBrandId)
             setActiveTab('products')
-            refresh()
+            void refresh()
           }}
         />
       )}
@@ -145,7 +196,7 @@ export default function SellerWorkspace({ onBack }: { onBack: () => void }) {
             clearSellerTabBadge('inventory')
             setPreselectedProductId(targetProductId)
             setActiveTab('inventory')
-            refresh()
+            void refresh()
           }}
         />
       )}

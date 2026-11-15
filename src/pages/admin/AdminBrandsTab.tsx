@@ -37,10 +37,10 @@ export default function AdminBrandsTab({
     return true
   })
 
-  function handleApprove(brand: Brand) {
+  async function handleApprove(brand: Brand) {
     try {
-      updateAdminBrandStatus(brand.id, 'APPROVED')
-      onRefresh()
+      await updateAdminBrandStatus(brand.id, 'APPROVED')
+      await onRefresh()
       onNotify(
         'success',
         `브랜드 [${brand.name}]이(가) 승인 처리되었습니다. 이제 판매자가 해당 브랜드에 상품을 등록할 수 있습니다.`,
@@ -50,14 +50,14 @@ export default function AdminBrandsTab({
     }
   }
 
-  function handleRejectSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleRejectSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!rejectingBrand) return
     try {
-      updateAdminBrandStatus(rejectingBrand.id, 'REJECTED', rejectReason)
+      await updateAdminBrandStatus(rejectingBrand.id, 'REJECTED', rejectReason)
       setRejectingBrand(null)
       setRejectReason('')
-      onRefresh()
+      await onRefresh()
       onNotify(
         'info',
         `브랜드 [${rejectingBrand.name}]이(가) 거절 처리되었으며 판매자에게 거절 사유가 전달됩니다.`,
@@ -67,10 +67,10 @@ export default function AdminBrandsTab({
     }
   }
 
-  function handleDelete(brand: Brand) {
+  async function handleDelete(brand: Brand) {
     try {
-      deleteSellerBrand(brand.id, 'ADMIN')
-      onRefresh()
+      await deleteSellerBrand(brand.id, 'ADMIN')
+      await onRefresh()
       onNotify('info', `브랜드 [${brand.name}]이(가) 삭제 처리되었습니다.`)
     } catch (err) {
       onNotify('error', err instanceof Error ? err.message : '브랜드 삭제에 실패했습니다.')

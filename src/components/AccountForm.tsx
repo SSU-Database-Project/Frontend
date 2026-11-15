@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { registerMockUser } from '../services/mockStore'
+import { loginUser, registerMockUser } from '../services/mockStore'
 import Icon from './Icon'
 import './AccountForm.css'
 
@@ -10,16 +10,27 @@ export default function AccountForm({ mode, onSwitch, onComplete }: {
 }) {
   const [showPassword, setShowPassword] = useState(false)
   const signup = mode === 'signup'
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (signup) {
-      const form = event.currentTarget
-      const nameInput = form.querySelector<HTMLInputElement>('#name')
-      const emailInput = form.querySelector<HTMLInputElement>('#email')
-      registerMockUser({
-        name: nameInput?.value ?? '',
-        email: emailInput?.value ?? '',
-      })
+    const form = event.currentTarget
+    const nameInput = form.querySelector<HTMLInputElement>('#name')
+    const emailInput = form.querySelector<HTMLInputElement>('#email')
+    const passwordInput = form.querySelector<HTMLInputElement>('#password')
+    try {
+      if (signup) {
+        await registerMockUser({
+          name: nameInput?.value ?? '',
+          email: emailInput?.value ?? '',
+          password: passwordInput?.value ?? '',
+        })
+      } else {
+        await loginUser({
+          email: emailInput?.value ?? '',
+          password: passwordInput?.value ?? '',
+        })
+      }
+    } catch {
+      // 실제 백엔드 서버 미기동 상태에서도 화면 전환 테스트가 가능하도록 허용
     }
     onComplete()
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import WorkspaceLayout, { type WorkspaceNavItem } from '../../components/WorkspaceLayout'
 import {
   clearAdminTabBadge,
@@ -8,6 +8,7 @@ import {
   getUnreadChanges,
   resetMockStore,
 } from '../../services/mockStore'
+import type { Brand, Product, UserItem } from '../../types/commerce'
 import AdminBrandsTab from './AdminBrandsTab'
 import AdminProductsTab from './AdminProductsTab'
 import AdminStatsTab from './AdminStatsTab'
@@ -20,25 +21,66 @@ export default function AdminWorkspace({ onBack }: { onBack: () => void }) {
     clearAdminTabBadge('brands')
     return 'brands'
   })
-  const [version, setVersion] = useState(0)
+  const [brands, setBrands] = useState<Brand[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [users, setUsers] = useState<UserItem[]>([])
+  const [unread, setUnread] = useState(() => getUnreadChanges().ADMIN)
   const [banner, setBanner] = useState<{
     type: 'success' | 'error' | 'info'
     text: string
   } | null>(null)
 
+  const refresh = useCallback(async () => {
+    try {
+      const [nextBrands, nextProducts, nextUsers] = await Promise.all([
+        getAdminBrands(),
+        getAdminProducts(),
+        getAdminUsers(),
+      ])
+      setBrands(nextBrands)
+      setProducts(nextProducts)
+      setUsers(nextUsers)
+      setUnread(getUnreadChanges().ADMIN)
+    } catch (err) {
+      setBanner({
+        type: 'error',
+        text:
+          err instanceof Error
+            ? err.message
+            : '백엔드 서버에서 관리자 데이터를 불러오지 못했습니다.',
+      })
+    }
+  }, [])
+
   useEffect(() => {
     clearAdminTabBadge(activeTab)
+    let active = true
+    void Promise.all([
+      getAdminBrands(),
+      getAdminProducts(),
+      getAdminUsers(),
+    ])
+      .then(([nextBrands, nextProducts, nextUsers]) => {
+        if (!active) return
+        setBrands(nextBrands)
+        setProducts(nextProducts)
+        setUsers(nextUsers)
+        setUnread(getUnreadChanges().ADMIN)
+      })
+      .catch(err => {
+        if (!active) return
+        setBanner({
+          type: 'error',
+          text:
+            err instanceof Error
+              ? err.message
+              : '백엔드 서버에서 관리자 데이터를 불러오지 못했습니다.',
+        })
+      })
+    return () => {
+      active = false
+    }
   }, [activeTab])
-
-  void version
-  const brands = getAdminBrands()
-  const products = getAdminProducts()
-  const users = getAdminUsers()
-  const unread = getUnreadChanges().ADMIN
-
-  function refresh() {
-    setVersion(v => v + 1)
-  }
 
   function notify(type: 'success' | 'error' | 'info', text: string) {
     setBanner({ type, text })
@@ -47,7 +89,7 @@ export default function AdminWorkspace({ onBack }: { onBack: () => void }) {
   function handleResetDemo() {
     resetMockStore()
     clearAdminTabBadge(activeTab)
-    refresh()
+    void refresh()
     notify('info', '시연 데이터가 초기 상태로 복원되었습니다.')
   }
 
@@ -93,11 +135,11 @@ export default function AdminWorkspace({ onBack }: { onBack: () => void }) {
         clearAdminTabBadge(tab)
         setActiveTab(tab)
         setBanner(null)
-        refresh()
+        void refresh()
       }}
       onAcknowledgeActiveTab={() => {
         clearAdminTabBadge(activeTab)
-        refresh()
+        void refresh()
       }}
       onBackToRoles={onBack}
       onResetDemoData={handleResetDemo}

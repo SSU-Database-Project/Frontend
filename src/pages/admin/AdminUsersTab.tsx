@@ -42,11 +42,11 @@ export default function AdminUsersTab({
     return true
   })
 
-  function handleToggleSuspend(user: UserItem) {
+  async function handleToggleSuspend(user: UserItem) {
     try {
       const next = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'
-      updateAdminUserStatus(user.id, next)
-      onRefresh()
+      await updateAdminUserStatus(user.id, next)
+      await onRefresh()
       onNotify(
         'success',
         `회원 [${user.name}] 계정 상태가 ${next === 'ACTIVE' ? '정상' : '이용 정지'}(으)로 변경되었습니다.`,
@@ -56,14 +56,14 @@ export default function AdminUsersTab({
     }
   }
 
-  function handleConfirmWithdraw() {
+  async function handleConfirmWithdraw() {
     if (!confirmWithdrawUser) return
     try {
       const targetName = confirmWithdrawUser.name
       const isSeller = confirmWithdrawUser.role === 'SELLER'
-      withdrawAdminUser(confirmWithdrawUser.id)
+      await withdrawAdminUser(confirmWithdrawUser.id)
       setConfirmWithdrawUser(null)
-      onRefresh()
+      await onRefresh()
       onNotify(
         'info',
         isSeller

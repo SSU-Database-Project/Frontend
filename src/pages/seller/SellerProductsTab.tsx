@@ -239,11 +239,11 @@ export default function SellerProductsTab({
     reader.readAsDataURL(file)
   }
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     try {
       if (editingProduct) {
-        const updated = updateSellerProduct(editingProduct.id, {
+        const updated = await updateSellerProduct(editingProduct.id, {
           brandId,
           categoryId,
           name,
@@ -257,13 +257,13 @@ export default function SellerProductsTab({
         })
         setModalError(null)
         setFormOpen(false)
-        onRefresh()
+        await onRefresh()
         onNotify(
           'info',
           `상품 [${updated.name}] 정보가 수정되어 재승인 대기 상태로 전환되었습니다. 관리자 승인 전까지 쇼핑몰에서 숨김 처리됩니다.`,
         )
       } else {
-        const created = createSellerProduct({
+        const created = await createSellerProduct({
           brandId,
           categoryId,
           name,
@@ -277,7 +277,7 @@ export default function SellerProductsTab({
         })
         setModalError(null)
         setFormOpen(false)
-        onRefresh()
+        await onRefresh()
         onNotify(
           'success',
           `신규 상품 [${created.name} (${created.productCode})] 등록 신청이 완료되었습니다. 관리자 승인 후 판매가 시작됩니다.`,
@@ -288,11 +288,11 @@ export default function SellerProductsTab({
     }
   }
 
-  function handleToggleSaleStatus(product: Product) {
+  async function handleToggleSaleStatus(product: Product) {
     try {
       const next = product.status === 'ON_SALE' ? 'SOLD_OUT' : 'ON_SALE'
-      updateSellerProductSaleStatus(product.id, next)
-      onRefresh()
+      await updateSellerProductSaleStatus(product.id, next)
+      await onRefresh()
       onNotify(
         'success',
         `[${product.name}] 판매 상태가 ${next === 'ON_SALE' ? '판매중' : '품절'}(으)로 즉시 변경되었습니다.`,
@@ -302,10 +302,10 @@ export default function SellerProductsTab({
     }
   }
 
-  function handleDeleteProduct(product: Product) {
+  async function handleDeleteProduct(product: Product) {
     try {
-      deleteSellerProduct(product.id)
-      onRefresh()
+      await deleteSellerProduct(product.id)
+      await onRefresh()
       onNotify('info', `상품 [${product.name}]이(가) 삭제 처리되었습니다.`)
     } catch (err) {
       onNotify('error', err instanceof Error ? err.message : '상품 삭제에 실패했습니다.')

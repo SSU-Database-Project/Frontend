@@ -1,9 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   getBrandSalesSummaries,
   getSalesStats,
 } from '../../services/mockStore'
-import type { Brand, Product, StatPeriod, UserItem } from '../../types/commerce'
+import type {
+  Brand,
+  BrandSalesSummary,
+  Product,
+  SalesStatPoint,
+  StatPeriod,
+  UserItem,
+} from '../../types/commerce'
 
 type AdminStatsTabProps = {
   brands: Brand[]
@@ -17,9 +24,29 @@ export default function AdminStatsTab({
   users,
 }: AdminStatsTabProps) {
   const [period, setPeriod] = useState<StatPeriod>('daily')
+  const [stats, setStats] = useState<SalesStatPoint[]>([])
+  const [brandSummaries, setBrandSummaries] = useState<BrandSalesSummary[]>([])
 
-  const stats = getSalesStats(period, 'ADMIN')
-  const brandSummaries = getBrandSalesSummaries()
+  useEffect(() => {
+    let active = true
+    void Promise.all([
+      getSalesStats(period, 'ADMIN'),
+      getBrandSalesSummaries(),
+    ])
+      .then(([nextStats, nextSummaries]) => {
+        if (!active) return
+        setStats(nextStats)
+        setBrandSummaries(nextSummaries)
+      })
+      .catch(() => {
+        if (!active) return
+        setStats([])
+        setBrandSummaries([])
+      })
+    return () => {
+      active = false
+    }
+  }, [period, brands, products, users])
 
   const totalRevenue = stats.reduce((sum, s) => sum + s.revenue, 0)
   const totalSalesCount = stats.reduce((sum, s) => sum + s.salesCount, 0)

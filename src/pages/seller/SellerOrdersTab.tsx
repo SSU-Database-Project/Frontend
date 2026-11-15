@@ -38,10 +38,10 @@ export default function SellerOrdersTab({
     s => statusFilter === 'ALL' || s.status === statusFilter,
   )
 
-  function handleChangeStatus(shipment: SellerShipment, nextStatus: ShipmentStatus) {
+  async function handleChangeStatus(shipment: SellerShipment, nextStatus: ShipmentStatus) {
     try {
-      updateShipmentStatus(shipment.id, nextStatus)
-      onRefresh()
+      await updateShipmentStatus(shipment.id, nextStatus)
+      await onRefresh()
       if (nextStatus === 'CONFIRMED') {
         onNotify(
           'success',

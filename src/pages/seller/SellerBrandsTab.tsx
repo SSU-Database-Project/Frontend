@@ -262,9 +262,9 @@ export default function SellerBrandsTab({
     }
   }
 
-  function submitBrandWithProduct(productDraft: InitialProductDraftInput) {
+  async function submitBrandWithProduct(productDraft: InitialProductDraftInput) {
     const wasAlreadyApproved = Boolean(matchedRegisteredBrand)
-    const created = createSellerBrand({
+    const created = await createSellerBrand({
       name,
       description: matchedRegisteredBrand
         ? matchedRegisteredBrand.description
@@ -277,7 +277,7 @@ export default function SellerBrandsTab({
     setModalError(null)
     setProductModalOpen(false)
     resetInitialProductForm()
-    onRefresh()
+    await onRefresh()
     if (wasAlreadyApproved || created.status === 'APPROVED') {
       onNotify(
         'success',
@@ -291,7 +291,7 @@ export default function SellerBrandsTab({
     }
   }
 
-  function handleProductModalSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleProductModalSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     try {
       if (!name.trim()) {
@@ -312,7 +312,7 @@ export default function SellerBrandsTab({
         options: initOptions,
       }
       validateInitialProductDraft(draft, name)
-      submitBrandWithProduct(draft)
+      await submitBrandWithProduct(draft)
     } catch (err) {
       showModalError(
         err instanceof Error
@@ -349,10 +349,10 @@ export default function SellerBrandsTab({
     }
   }
 
-  function handleDeleteBrand(brand: Brand) {
+  async function handleDeleteBrand(brand: Brand) {
     try {
-      deleteSellerBrand(brand.id)
-      onRefresh()
+      await deleteSellerBrand(brand.id)
+      await onRefresh()
       onNotify('info', `브랜드 [${brand.name}]이(가) 삭제 처리되었습니다.`)
     } catch (err) {
       onNotify(

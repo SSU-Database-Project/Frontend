@@ -47,13 +47,13 @@ export default function AdminProductsTab({
     return true
   })
 
-  function handleStatusUpdate(
+  async function handleStatusUpdate(
     product: Product,
     nextStatus: 'ON_SALE' | 'BLOCKED',
   ) {
     try {
-      updateAdminProductStatus(product.id, nextStatus)
-      onRefresh()
+      await updateAdminProductStatus(product.id, nextStatus)
+      await onRefresh()
       if (nextStatus === 'ON_SALE') {
         onNotify(
           'success',
@@ -70,14 +70,14 @@ export default function AdminProductsTab({
     }
   }
 
-  function handleRejectSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleRejectSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!rejectingProduct) return
     try {
-      updateAdminProductStatus(rejectingProduct.id, 'REJECTED', rejectReason)
+      await updateAdminProductStatus(rejectingProduct.id, 'REJECTED', rejectReason)
       setRejectingProduct(null)
       setRejectReason('')
-      onRefresh()
+      await onRefresh()
       onNotify(
         'info',
         `상품 [${rejectingProduct.name}] 승인이 거절 처리되었으며 판매자에게 사유가 전달됩니다.`,
@@ -87,10 +87,10 @@ export default function AdminProductsTab({
     }
   }
 
-  function handleDelete(product: Product) {
+  async function handleDelete(product: Product) {
     try {
-      deleteSellerProduct(product.id, 'ADMIN')
-      onRefresh()
+      await deleteSellerProduct(product.id, 'ADMIN')
+      await onRefresh()
       onNotify('info', `상품 [${product.name}]이(가) 삭제 처리되었습니다.`)
     } catch (err) {
       onNotify('error', err instanceof Error ? err.message : '상품 삭제에 실패했습니다.')
