@@ -1,3 +1,5 @@
+import { apiRequest, IS_MOCK_MODE } from './api'
+import type { SignupInput } from '../types/auth'
 import totePhoto from '../assets/seam-tote.webp'
 import type {
   Brand,
@@ -19,83 +21,13 @@ import type {
   UserItem,
 } from '../types/commerce'
 
+export const MOCK_SESSION_KEY = 'seam_mock_user_id'
+
+function currentSellerId() {
+  return Number(sessionStorage.getItem(MOCK_SESSION_KEY))
+}
+
 const STORAGE_KEY = 'seam_mock_db_v4'
-const AUTH_TOKEN_KEY = 'seam_access_token'
-export const CURRENT_SELLER_ID = 2
-
-/**
- * 환경 변수 스위칭 플래그
- * - 기본 실행 `npm run dev` / `npm run build` (VITE_USE_MOCK=false 또는 미설정): 실제 백엔드 API 연동 모드
- * - Mock 실행 `npm run dev:mock` (VITE_USE_MOCK=true): 프론트엔드 Mock 데이터 모드
- */
-export const IS_MOCK_MODE: boolean =
-  import.meta.env.VITE_USE_MOCK === 'true'
-
-export const API_BASE_URL: string =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
-
-type ApiEnvelope<T> = {
-  success?: boolean
-  data?: T | { content?: T }
-  error?: { code?: string; message?: string } | null
-}
-
-async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY)
-  const headers = new Headers(options.headers)
-  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json')
-  }
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`)
-  }
-
-  const url = endpoint.startsWith('http')
-    ? endpoint
-    : `${API_BASE_URL.replace(/\/$/, '')}${endpoint}`
-
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  })
-
-  let payload: ApiEnvelope<T> | null = null
-  const text = await response.text()
-  if (text) {
-    try {
-      payload = JSON.parse(text) as ApiEnvelope<T>
-    } catch {
-      payload = null
-    }
-  }
-
-  if (!response.ok || payload?.success === false) {
-    const errorMessage =
-      payload?.error?.message ??
-      `백엔드 API 요청 실패 (${response.status} ${response.statusText})`
-    throw new Error(errorMessage)
-  }
-
-  if (payload && 'data' in payload && payload.data !== undefined) {
-    const rawData = payload.data
-    if (
-      rawData &&
-      typeof rawData === 'object' &&
-      !Array.isArray(rawData) &&
-      'content' in rawData &&
-      Array.isArray((rawData as { content?: unknown }).content)
-    ) {
-      return (rawData as { content: T }).content
-    }
-    return rawData as T
-  }
-
-  return (payload as unknown as T) ?? (undefined as unknown as T)
-}
-
 function createSvgSample(bg: string, fg: string, title: string, subtitle: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="750" viewBox="0 0 600 750">
     <rect width="600" height="750" fill="${bg}"/>
@@ -202,6 +134,7 @@ export type UnreadChangesState = {
 }
 
 type MockDatabase = {
+  credentials?: Record<number, { salt: string; hash: string }>
   users: UserItem[]
   brands: Brand[]
   products: Product[]
@@ -942,73 +875,50 @@ export function clearAdminTabBadge(tab: AdminTabKey): void {
   }
 }
 
-export async function loginUser(input: {
-  email: string
-  password?: string
-}): Promise<void> {
-  if (IS_MOCK_MODE) {
-    return
-  }
-
-  const trimmedEmail = input.email.trim()
-  if (!trimmedEmail) return
-
-  const result = await apiRequest<{ accessToken?: string; token?: string }>(
-    '/api/auth/login',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        email: trimmedEmail,
-        password: input.password ?? '',
-      }),
-    },
-  )
-  const token = result?.accessToken ?? result?.token
-  if (token) {
-    localStorage.setItem(AUTH_TOKEN_KEY, token)
-  }
+// Only the explicit offline demo uses these accounts. Real sessions are issued by the API.
+async function mockPasswordHash(password: string, salt: string) {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits({
+    name: 'PBKDF2', salt: encoder.encode(salt), iterations: 100_000, hash: 'SHA-256',
+  }, key, 256)
+  return Array.from(new Uint8Array(bits), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export async function registerMockUser(input: {
-  name: string
-  email: string
-  password?: string
-}): Promise<void> {
-  const trimmedName = input.name.trim()
-  const trimmedEmail = input.email.trim()
-  if (!trimmedName && !trimmedEmail) return
+export async function loginMockUser(email: string, password: string) {
+  const db = loadDb()
+  const user = db.users.find(item => item.email.toLowerCase() === email.toLowerCase())
+  const credential = user && db.credentials?.[user.id]
+  const matches = credential
+    ? await mockPasswordHash(password, credential.salt) === credential.hash
+    : password === 'demo1234!'
+  if (!user || user.status !== 'ACTIVE' || !matches) throw new Error('이메일 또는 비밀번호를 확인해 주세요.')
+  sessionStorage.setItem(MOCK_SESSION_KEY, String(user.id))
+  return user
+}
 
-  if (IS_MOCK_MODE) {
-    const db = loadDb()
-    const unread = ensureUnreadChanges(db)
-    const exists = db.users.some(
-      u => u.email.toLowerCase() === trimmedEmail.toLowerCase(),
-    )
-    if (!exists) {
-      const nextUserId = db.users.reduce((max, u) => Math.max(max, u.id), 0) + 1
-      db.users.push({
-        id: nextUserId,
-        email: trimmedEmail || `user${nextUserId}@example.com`,
-        name: trimmedName || `신규회원#${nextUserId}`,
-        role: 'USER',
-        status: 'ACTIVE',
-        createdAt: new Date().toISOString().slice(0, 19),
-      })
-    }
-    unread.ADMIN.users += 1
-    saveDb(db)
-    return
+export function getMockSessionUser() {
+  const id = Number(sessionStorage.getItem(MOCK_SESSION_KEY))
+  return loadDb().users.find(user => user.id === id && user.status === 'ACTIVE') ?? null
+}
+
+export async function signupMockUser(input: SignupInput) {
+  const salt = crypto.randomUUID()
+  const hash = await mockPasswordHash(input.password, salt)
+  const db = loadDb()
+  if (db.users.some(user => user.email.toLowerCase() === input.email.toLowerCase())) {
+    throw new Error('이미 가입된 이메일입니다.')
   }
-
-  await apiRequest('/api/auth/signup', {
-    method: 'POST',
-    body: JSON.stringify({
-      name: trimmedName,
-      email: trimmedEmail,
-      password: input.password ?? '',
-      role: 'USER',
-    }),
-  })
+  const sellerInfo = input.role === 'SELLER' ? input.seller : undefined
+  if (sellerInfo && db.users.some(user => user.sellerInfo?.businessNumber === sellerInfo.businessNumber)) {
+    throw new Error('이미 등록된 사업자등록번호입니다.')
+  }
+  const id = db.users.reduce((max, user) => Math.max(max, user.id), 0) + 1
+  db.users.push({ id, name: input.name, email: input.email, role: input.role, sellerInfo,
+    status: 'ACTIVE', createdAt: new Date().toISOString() })
+  db.credentials = { ...db.credentials, [id]: { salt, hash } }
+  ensureUnreadChanges(db).ADMIN.users += 1
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
 }
 
 export function getCatalogData() {
@@ -1128,7 +1038,7 @@ export function validateInitialProductDraft(
 }
 
 export async function getSellerBrands(
-  sellerId: number = CURRENT_SELLER_ID,
+  sellerId: number = currentSellerId(),
 ): Promise<Brand[]> {
   if (IS_MOCK_MODE) {
     const db = loadDb()
@@ -1150,7 +1060,7 @@ export async function createSellerBrand(input: {
   if (IS_MOCK_MODE) {
     const db = loadDb()
     const unread = ensureUnreadChanges(db)
-    const sellerId = input.sellerId ?? CURRENT_SELLER_ID
+    const sellerId = input.sellerId ?? currentSellerId()
     const trimmedName = input.name.trim()
     if (!trimmedName) {
       throw new Error('브랜드명을 입력해 주세요.')
@@ -1360,7 +1270,7 @@ export type UpsertProductInput = {
 }
 
 export async function getSellerProducts(
-  sellerId: number = CURRENT_SELLER_ID,
+  sellerId: number = currentSellerId(),
 ): Promise<Product[]> {
   if (IS_MOCK_MODE) {
     const db = loadDb()
@@ -1495,7 +1405,7 @@ export async function createSellerProduct(
       }
     })
 
-    const seller = db.users.find(u => u.id === CURRENT_SELLER_ID)
+    const seller = db.users.find(u => u.id === currentSellerId())
     const sellerName =
       seller?.sellerInfo?.companyName ?? seller?.name ?? brand.sellerName
 
@@ -1503,7 +1413,7 @@ export async function createSellerProduct(
       id: productId,
       brandId: brand.id,
       brandName: brand.name,
-      sellerId: CURRENT_SELLER_ID,
+      sellerId: currentSellerId(),
       sellerName,
       categoryId: category.id,
       parentCategoryName: parentCategory?.name ?? '패션',
@@ -1755,7 +1665,7 @@ export async function adjustOptionStock(input: {
 }
 
 export async function getStockHistory(
-  sellerId: number = CURRENT_SELLER_ID,
+  sellerId: number = currentSellerId(),
   optionId?: number,
 ): Promise<StockHistoryItem[]> {
   if (IS_MOCK_MODE) {
@@ -1782,7 +1692,7 @@ export async function getStockHistory(
 // ============================================================================
 
 export async function getSellerShipments(
-  sellerId: number = CURRENT_SELLER_ID,
+  sellerId: number = currentSellerId(),
 ): Promise<SellerShipment[]> {
   if (IS_MOCK_MODE) {
     const db = loadDb()
@@ -2072,7 +1982,7 @@ export async function getSalesStats(
     const activeShipments = db.shipments.filter(
       s =>
         s.status !== 'CANCELED' &&
-        (scope === 'ADMIN' || s.sellerId === CURRENT_SELLER_ID),
+        (scope === 'ADMIN' || s.sellerId === currentSellerId()),
     )
 
     const recentActualRevenue = activeShipments.reduce((acc, s) => acc + s.totalAmount, 0)
@@ -2136,7 +2046,7 @@ export async function getTopProducts(
     const products = db.products.filter(
       p =>
         p.status !== 'DELETED' &&
-        (scope === 'ADMIN' || p.sellerId === CURRENT_SELLER_ID),
+        (scope === 'ADMIN' || p.sellerId === currentSellerId()),
     )
 
     const salesByProduct = new Map<number, { qty: number; rev: number }>()

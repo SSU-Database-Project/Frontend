@@ -1,16 +1,12 @@
 import AccountForm from '../components/AccountForm'
 import PageHeading from '../components/PageHeading'
 
-type SignupPageProps = {
+export default function SignupPage({ onLogin, onRegistered }: {
   onLogin: () => void
-  onComplete: () => void
-}
-
-export default function SignupPage({ onLogin, onComplete }: SignupPageProps) {
-  return (
-    <>
-      <PageHeading title="회원가입" description="가입 정보를 입력하면 역할 선택으로 이어져요." />
-      <AccountForm mode="signup" onSwitch={onLogin} onComplete={onComplete} />
-    </>
-  )
+  onRegistered: (email: string) => void
+}) {
+  return <>
+    <PageHeading title="회원가입" description="가입 유형을 선택하고 계정 정보를 입력해 주세요." />
+    <AccountForm mode="signup" onSwitch={onLogin} onRegistered={onRegistered} />
+  </>
 }

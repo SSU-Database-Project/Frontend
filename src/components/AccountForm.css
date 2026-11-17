@@ -2,7 +2,7 @@
 .account-form { gap: 21px; }
 .field { gap: 9px; }
 .field label { font-size: 14px; font-weight: 700; letter-spacing: -.035em; }
-.field input {
+.field input, .field select {
   width: 100%;
   min-height: 52px;
   padding: 13px 16px;
@@ -12,6 +12,11 @@
   color: #1c201e;
   font-size: 15px;
 }
+.field select { font-family: inherit; }
+.auth-error, .auth-notice { font-size: 14px; line-height: 1.55; }
+.auth-error { color: #a12524; }
+.auth-notice { margin: 0 0 16px; }
+.account-form button:disabled, .account-switch button:disabled { cursor: wait; opacity: .65; }
 .field input::placeholder { color: #777a75; }
 .password-input { position: relative; }
 .password-input input { padding-right: 52px; }

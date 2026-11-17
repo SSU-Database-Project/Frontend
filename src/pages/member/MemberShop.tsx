@@ -13,11 +13,11 @@ const titles = { home: '상품 둘러보기', favorites: '좋아요', cart: '장
 type Tab = keyof typeof titles
 function currentRoute() { return window.location.hash.slice(1) || 'home' }
 
-export default function MemberShop({ onExit }: { onExit: () => void }) {
+export default function MemberShop({ userId, onExit }: { userId: number; onExit: () => void }) {
   const [route, setRoute] = useState(currentRoute)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<Category | '전체'>('전체')
-  const bag = useMemberBag()
+  const bag = useMemberBag(userId)
   const product = products.find(p => route === 'product/' + p.id)
   const tab: Tab = Object.hasOwn(titles, route) ? route as Tab : 'home'
   const title = product?.name ?? titles[tab]

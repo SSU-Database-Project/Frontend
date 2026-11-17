@@ -2,7 +2,7 @@ import { demoOrders, formatPrice, products } from '../../data/memberCatalog'
 
 export default function OrdersPage({ onExit }: { onExit: () => void }) {
   return <>
-    <div className="shop-title"><h1>마이페이지</h1><button className="text-button" onClick={onExit}>역할 다시 선택</button></div>
+    <div className="shop-title"><h1>마이페이지</h1><button className="text-button" onClick={onExit}>로그아웃</button></div>
     <section className="orders"><h2>주문 내역 <span>{demoOrders.length}</span></h2>
       {demoOrders.map(order => {
         const p = products.find(item => item.id === order.productId)!

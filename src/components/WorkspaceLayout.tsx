@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
-import { IS_MOCK_MODE } from '../services/mockStore'
+import { IS_MOCK_MODE } from '../services/api'
 import Icon, { type IconName } from './Icon'
 import type { Role } from '../types/role'
 import './WorkspaceLayout.css'
@@ -20,7 +20,7 @@ type WorkspaceLayoutProps<T extends string> = {
   activeTab: T
   onTabChange: (tab: T) => void
   onAcknowledgeActiveTab?: () => void
-  onBackToRoles: () => void
+  onLogout: () => void
   onResetDemoData: () => void
   bannerMessage?: { type: 'success' | 'error' | 'info'; text: string } | null
   onClearBanner?: () => void
@@ -35,7 +35,7 @@ export default function WorkspaceLayout<T extends string>({
   activeTab,
   onTabChange,
   onAcknowledgeActiveTab,
-  onBackToRoles,
+  onLogout,
   onResetDemoData,
   bannerMessage,
   onClearBanner,
@@ -77,9 +77,9 @@ export default function WorkspaceLayout<T extends string>({
               <span>시연 데이터 초기화</span>
             </button>
           )}
-          <button type="button" className="ws-switch-role-btn" onClick={onBackToRoles}>
+          <button type="button" className="ws-switch-role-btn" onClick={onLogout}>
             <Icon name="back" />
-            <span>로그인으로 돌아가기</span>
+            <span>로그아웃</span>
           </button>
         </div>
       </header>

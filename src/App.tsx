@@ -1,53 +1,82 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import AccountLayout from './components/AccountLayout'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
-import RoleSelectionPage from './pages/RoleSelectionPage'
-import RoleHomePage from './pages/RoleHomePage'
 import SellerWorkspace from './pages/seller/SellerWorkspace'
 import AdminWorkspace from './pages/admin/AdminWorkspace'
 import MemberShop from './pages/member/MemberShop'
-import type { Role } from './types/role'
+import { AUTH_TOKEN_KEY, IS_MOCK_MODE, SESSION_EXPIRED } from './services/api'
+import { hasSession, logout, restoreSession } from './services/auth'
+import type { AuthUser } from './types/auth'
 
-type Screen = 'login' | 'signup' | 'roles' | Role
+type Screen =
+  | { page: 'login'; registeredEmail?: string; message?: string }
+  | { page: 'signup' | 'restoring' | 'restore-error' }
+  | { page: 'home'; user: AuthUser }
+
+function clearRoute() {
+  window.history.replaceState(null, '', window.location.pathname + window.location.search)
+}
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('login')
-  const openLogin = () => setScreen('login')
-  const openRoles = () => setScreen('roles')
-  function enterRole(role: Role) {
-    if (role === 'USER') window.history.replaceState(null, '', '#home')
-    setScreen(role)
+  const [screen, setScreen] = useState<Screen>(() => ({ page: hasSession() ? 'restoring' : 'login' }))
+
+  useEffect(() => {
+    function expired() {
+      clearRoute()
+      setScreen({ page: 'login', message: '로그인이 만료되었습니다. 다시 로그인해 주세요.' })
+    }
+    function sync(event: StorageEvent) {
+      if (IS_MOCK_MODE || (event.key !== AUTH_TOKEN_KEY && event.key !== null)) return
+      clearRoute()
+      setScreen({ page: hasSession() ? 'restoring' : 'login' })
+    }
+    window.addEventListener(SESSION_EXPIRED, expired)
+    window.addEventListener('storage', sync)
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED, expired)
+      window.removeEventListener('storage', sync)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (screen.page !== 'restoring') return
+    let active = true
+    restoreSession().then(user => {
+      if (active) setScreen({ page: 'home', user })
+    }).catch(() => {
+      if (active && hasSession()) setScreen({ page: 'restore-error' })
+    })
+    return () => { active = false }
+  }, [screen])
+
+  function signOut() {
+    logout()
+    clearRoute()
+    setScreen({ page: 'login' })
   }
 
-  function leaveShop() {
-    window.history.replaceState(null, '', window.location.pathname + window.location.search)
-    openRoles()
+  if (screen.page === 'home') {
+    const { user } = screen
+    if (user.role === 'USER') return <MemberShop key={user.id} userId={user.id} onExit={signOut} />
+    if (user.role === 'SELLER') return <SellerWorkspace accountLabel={user.name} onLogout={signOut} />
+    return <AdminWorkspace accountLabel={user.email} onLogout={signOut} />
   }
 
-  if (screen === 'USER') return <MemberShop onExit={leaveShop} />
-
-  if (screen === 'SELLER') {
-    return <SellerWorkspace onBack={openLogin} />
-  }
-
-  if (screen === 'ADMIN') {
-    return <AdminWorkspace onBack={openLogin} />
-  }
-
-  let page
-  switch (screen) {
-    case 'login':
-      page = <LoginPage onSignup={() => setScreen('signup')} onComplete={openRoles} />
-      break
-    case 'signup':
-      page = <SignupPage onLogin={openLogin} onComplete={openRoles} />
-      break
-    case 'roles':
-      page = <RoleSelectionPage onBack={openLogin} onContinue={enterRole} />
-      break
-    default:
-      page = <RoleHomePage role={screen} onBack={openRoles} />
-  }
-  return <AccountLayout>{page}</AccountLayout>
+  return <AccountLayout>
+    {screen.page === 'restoring' && <p role="status">로그인 정보를 확인하고 있습니다.</p>}
+    {screen.page === 'restore-error' && <>
+      <h1 id="screen-title">계정 확인</h1>
+      <p className="intro" role="alert">로그인 정보를 확인하지 못했습니다. 연결 상태를 확인해 주세요.</p>
+      <button className="primary-button" type="button" onClick={() => setScreen({ page: 'restoring' })}>다시 시도</button>
+      <button className="back-link" type="button" onClick={signOut}>로그인으로 돌아가기</button>
+    </>}
+    {screen.page === 'signup' && <SignupPage onLogin={() => setScreen({ page: 'login' })}
+      onRegistered={email => setScreen({ page: 'login', registeredEmail: email, message: '회원가입이 완료되었습니다. 로그인해 주세요.' })} />}
+    {screen.page === 'login' && <LoginPage onSignup={() => setScreen({ page: 'signup' })}
+      initialEmail={screen.registeredEmail} message={screen.message} onAuthenticated={user => {
+        clearRoute()
+        setScreen({ page: 'home', user })
+      }} />}
+  </AccountLayout>
 }

@@ -23,7 +23,7 @@ import SellerStatsTab from './SellerStatsTab'
 
 export type SellerTab = 'brands' | 'products' | 'inventory' | 'orders' | 'stats'
 
-export default function SellerWorkspace({ onBack }: { onBack: () => void }) {
+export default function SellerWorkspace({ accountLabel, onLogout }: { accountLabel: string; onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<SellerTab>(() => {
     clearSellerTabBadge('brands')
     return 'brands'
@@ -151,7 +151,7 @@ export default function SellerWorkspace({ onBack }: { onBack: () => void }) {
     <WorkspaceLayout
       role="SELLER"
       roleTitle="판매자 센터"
-      accountLabel="(주)심스튜디오 · 김도현"
+      accountLabel={accountLabel}
       navItems={navItems}
       activeTab={activeTab}
       onTabChange={tab => {
@@ -166,7 +166,7 @@ export default function SellerWorkspace({ onBack }: { onBack: () => void }) {
         clearSellerTabBadge(activeTab)
         void refresh()
       }}
-      onBackToRoles={onBack}
+      onLogout={onLogout}
       onResetDemoData={handleResetDemo}
       bannerMessage={banner}
       onClearBanner={() => setBanner(null)}

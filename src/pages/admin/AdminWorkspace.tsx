@@ -16,7 +16,7 @@ import AdminUsersTab from './AdminUsersTab'
 
 export type AdminTab = 'brands' | 'products' | 'users' | 'stats'
 
-export default function AdminWorkspace({ onBack }: { onBack: () => void }) {
+export default function AdminWorkspace({ accountLabel, onLogout }: { accountLabel: string; onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
     clearAdminTabBadge('brands')
     return 'brands'
@@ -128,7 +128,7 @@ export default function AdminWorkspace({ onBack }: { onBack: () => void }) {
     <WorkspaceLayout
       role="ADMIN"
       roleTitle="관리자 콘솔"
-      accountLabel="admin@seam.kr · 플랫폼 총괄"
+      accountLabel={accountLabel}
       navItems={navItems}
       activeTab={activeTab}
       onTabChange={tab => {
@@ -141,7 +141,7 @@ export default function AdminWorkspace({ onBack }: { onBack: () => void }) {
         clearAdminTabBadge(activeTab)
         void refresh()
       }}
-      onBackToRoles={onBack}
+      onLogout={onLogout}
       onResetDemoData={handleResetDemo}
       bannerMessage={banner}
       onClearBanner={() => setBanner(null)}

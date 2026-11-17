@@ -10,11 +10,10 @@ export type CartLine = {
 }
 
 type MemberBag = { favorites: number[]; cart: CartLine[] }
-const storageKey = 'seam.member.shopping.v1'
 export const lineKey = (line: Pick<CartLine, 'productId' | 'color' | 'size'>) =>
   [line.productId, line.color, line.size].join('/')
 
-function readBag(): MemberBag {
+function readBag(storageKey: string): MemberBag {
   const empty = { favorites: [], cart: [] }
   try {
     const raw = sessionStorage.getItem(storageKey)
@@ -40,11 +39,12 @@ export function quantityInCart(cart: CartLine[], productId: number) {
   return cart.reduce((sum, line) => sum + (line.productId === productId ? line.quantity : 0), 0)
 }
 
-export function useMemberBag() {
-  const [bag, setBag] = useState(readBag)
+export function useMemberBag(userId: number) {
+  const storageKey = 'seam.member.shopping.v1.' + userId
+  const [bag, setBag] = useState(() => readBag(storageKey))
   useEffect(() => {
     try { sessionStorage.setItem(storageKey, JSON.stringify(bag)) } catch { /* Keep the in-memory bag when storage is unavailable. */ }
-  }, [bag])
+  }, [bag, storageKey])
 
   function toggleFavorite(id: number) {
     setBag(prev => ({ ...prev, favorites: prev.favorites.includes(id)
