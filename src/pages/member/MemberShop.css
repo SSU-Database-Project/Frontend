@@ -104,6 +104,21 @@
 .order header { display: flex; gap: 15px; justify-content: space-between; align-items: baseline; background: #efeee8; padding: 12px 15px; }
 .order + .order { margin-top: 20px; }
 .delivery-status { margin-left: auto; align-self: flex-start; color: var(--blue); font-size: 14px; font-weight: 700; white-space: nowrap; }
+.image-placeholder { display: grid; place-items: center; background: #efeee9; color: var(--muted); font-size: 12px; }
+.card-photo .image-placeholder { height: 100%; }
+.shop-pages, .shipment-heading { display: flex; align-items: center; gap: 16px; padding-block: 15px; }
+.shop-pages { justify-content: center; margin-top: 20px; }
+.shop-pages button { border: 1px solid var(--line); background: white; padding: 7px 14px; }
+.shop-error { color: #a12524; padding: 12px 0; }
+.shop-description, .shipping-address { margin-top: 20px; line-height: 1.6; }
+.shipment + .shipment { border-top: 1px solid var(--line); margin-top: 12px; }
+.checkout-button { margin-top: 20px; width: 100%; }
+.member-shop button:disabled { cursor: default; opacity: .6; }
+.delivery-form, .delivery-form label { display: grid; gap: 8px; }
+.delivery-form { margin-top: 20px; gap: 14px; }
+.delivery-form h3 { margin: 0; }
+.delivery-form label, .delivery-form small { font-size: 13px; }
+.delivery-form input { width: 100%; padding: 10px; border: 1px solid #c5c7bf; border-radius: 3px; }
 
 @media (max-width: 760px) {
   .member-shop { padding: 0 16px calc(90px + env(safe-area-inset-bottom)); }

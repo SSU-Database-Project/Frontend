@@ -8,11 +8,11 @@ export const API_BASE_URL: string =
 
 type ApiEnvelope<T> = {
   success?: boolean
-  data?: T | { content?: T }
+  data?: T
   error?: { code?: string; message?: string } | null
 }
 
-export async function apiRequest<T>(
+export async function requestData<T>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
@@ -57,18 +57,15 @@ export async function apiRequest<T>(
   }
 
   if (payload && 'data' in payload && payload.data !== undefined) {
-    const rawData = payload.data
-    if (
-      rawData &&
-      typeof rawData === 'object' &&
-      !Array.isArray(rawData) &&
-      'content' in rawData &&
-      Array.isArray((rawData as { content?: unknown }).content)
-    ) {
-      return (rawData as { content: T }).content
-    }
-    return rawData as T
+    return payload.data
   }
 
   return (payload as unknown as T) ?? (undefined as unknown as T)
+}
+
+// Existing workspace screens consume arrays. Member lists also need the server's page metadata.
+export async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const data = await requestData<T | { content: T }>(endpoint, options)
+  if (data && typeof data === 'object' && 'content' in data && Array.isArray(data.content)) return data.content
+  return data as T
 }
