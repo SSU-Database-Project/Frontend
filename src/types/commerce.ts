@@ -53,7 +53,7 @@ export type SizeOption = {
   label: string
 }
 
-export type Gender = 'MALE' | 'FEMALE' | 'UNISEX'
+export type Gender = 'MEN' | 'WOMEN' | 'UNISEX'
 
 export type ProductStatus =
   | 'PENDING'

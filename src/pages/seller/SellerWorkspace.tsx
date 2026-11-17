@@ -43,18 +43,17 @@ export default function SellerWorkspace({ accountLabel, onLogout }: { accountLab
 
   const refresh = useCallback(async () => {
     try {
-      const [nextBrands, nextProducts, nextHistory, nextShipments] =
-        await Promise.all([
-          getSellerBrands(),
-          getSellerProducts(),
-          getStockHistory(),
-          getSellerShipments(),
-        ])
+      const [nextBrands, nextProducts, nextShipments] = await Promise.all([
+        getSellerBrands(),
+        getSellerProducts(),
+        getSellerShipments(),
+      ])
       setBrands(nextBrands)
       setProducts(nextProducts)
-      setStockHistory(nextHistory)
       setShipments(nextShipments)
       setUnread(getUnreadChanges().SELLER)
+      const nextHistory = await getStockHistory(undefined, undefined, nextProducts)
+      setStockHistory(nextHistory)
     } catch (err) {
       setBanner({
         type: 'error',
@@ -72,16 +71,17 @@ export default function SellerWorkspace({ accountLabel, onLogout }: { accountLab
     void Promise.all([
       getSellerBrands(),
       getSellerProducts(),
-      getStockHistory(),
       getSellerShipments(),
     ])
-      .then(([nextBrands, nextProducts, nextHistory, nextShipments]) => {
+      .then(async ([nextBrands, nextProducts, nextShipments]) => {
         if (!active) return
         setBrands(nextBrands)
         setProducts(nextProducts)
-        setStockHistory(nextHistory)
         setShipments(nextShipments)
         setUnread(getUnreadChanges().SELLER)
+        const nextHistory = await getStockHistory(undefined, undefined, nextProducts)
+        if (!active) return
+        setStockHistory(nextHistory)
       })
       .catch(err => {
         if (!active) return

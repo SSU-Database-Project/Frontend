@@ -11,6 +11,7 @@ import {
   createSellerBrand,
   deleteSellerBrand,
   getCatalogData,
+  uploadSellerImage,
   validateInitialProductDraft,
   type InitialProductDraftInput,
   type ProductOptionInput,
@@ -207,7 +208,7 @@ export default function SellerBrandsTab({
     )
   }
 
-  function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
+  async function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
@@ -215,13 +216,14 @@ export default function SellerBrandsTab({
       return
     }
     setModalError(null)
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setInitImageUrl(reader.result)
-      }
+    try {
+      const uploadedUrl = await uploadSellerImage(file)
+      setInitImageUrl(uploadedUrl)
+    } catch (err) {
+      showModalError(
+        err instanceof Error ? err.message : '이미지 업로드에 실패했습니다.',
+      )
     }
-    reader.readAsDataURL(file)
   }
 
   function handleSelectExistingBrand(brand: Brand) {
@@ -825,8 +827,8 @@ export default function SellerBrandsTab({
                     onChange={e => setInitGender(e.target.value as Gender)}
                   >
                     <option value="UNISEX">공용 (UNISEX)</option>
-                    <option value="MALE">남성 (MALE)</option>
-                    <option value="FEMALE">여성 (FEMALE)</option>
+                    <option value="MEN">남성 (MEN)</option>
+                    <option value="WOMEN">여성 (WOMEN)</option>
                   </select>
                 </div>
 

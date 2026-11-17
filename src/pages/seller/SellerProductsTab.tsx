@@ -6,6 +6,7 @@ import {
   getCatalogData,
   updateSellerProduct,
   updateSellerProductSaleStatus,
+  uploadSellerImage,
   type ProductOptionInput,
 } from '../../services/mockStore'
 import type { Brand, Gender, Product, ProductStatus } from '../../types/commerce'
@@ -21,8 +22,8 @@ const PRODUCT_STATUS_LABEL: Record<ProductStatus, string> = {
 
 const GENDER_LABEL: Record<Gender, string> = {
   UNISEX: '공용',
-  MALE: '남성',
-  FEMALE: '여성',
+  MEN: '남성',
+  WOMEN: '여성',
 }
 
 type SellerProductsTabProps = {
@@ -222,7 +223,7 @@ export default function SellerProductsTab({
     )
   }
 
-  function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
+  async function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
@@ -230,13 +231,14 @@ export default function SellerProductsTab({
       return
     }
     setModalError(null)
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setImageUrl(reader.result)
-      }
+    try {
+      const uploadedUrl = await uploadSellerImage(file)
+      setImageUrl(uploadedUrl)
+    } catch (err) {
+      showModalError(
+        err instanceof Error ? err.message : '이미지 업로드에 실패했습니다.',
+      )
     }
-    reader.readAsDataURL(file)
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -658,8 +660,8 @@ export default function SellerProductsTab({
                     onChange={e => setGender(e.target.value as Gender)}
                   >
                     <option value="UNISEX">공용 (UNISEX)</option>
-                    <option value="MALE">남성 (MALE)</option>
-                    <option value="FEMALE">여성 (FEMALE)</option>
+                    <option value="MEN">남성 (MEN)</option>
+                    <option value="WOMEN">여성 (WOMEN)</option>
                   </select>
                 </div>
 

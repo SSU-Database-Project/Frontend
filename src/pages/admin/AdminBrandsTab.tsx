@@ -179,7 +179,7 @@ export default function AdminBrandsTab({
                   <td>{brand.createdAt.replace('T', ' ')}</td>
                   <td>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {brand.status !== 'APPROVED' && (
+                      {brand.status === 'PENDING' && (
                         <button
                           type="button"
                           className="ws-btn ws-btn-sm ws-btn-success"
@@ -189,7 +189,7 @@ export default function AdminBrandsTab({
                           <span>승인</span>
                         </button>
                       )}
-                      {brand.status !== 'REJECTED' && (
+                      {brand.status === 'PENDING' && (
                         <button
                           type="button"
                           className="ws-btn ws-btn-sm ws-btn-danger"

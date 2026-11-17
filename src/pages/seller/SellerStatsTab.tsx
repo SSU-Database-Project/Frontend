@@ -21,8 +21,8 @@ export default function SellerStatsTab({
   shipments,
 }: SellerStatsTabProps) {
   const [period, setPeriod] = useState<StatPeriod>('daily')
-  const [fromDate, setFromDate] = useState('2026-11-01')
-  const [toDate, setToDate] = useState('2026-11-10')
+  const [fromDate, setFromDate] = useState('2026-11-08')
+  const [toDate, setToDate] = useState('2026-11-17')
   const [stats, setStats] = useState<SalesStatPoint[]>([])
   const [topProducts, setTopProducts] = useState<TopProductStat[]>([])
 

@@ -14,8 +14,8 @@ const PRODUCT_STATUS_LABEL: Record<ProductStatus, string> = {
 
 const GENDER_LABEL: Record<Gender, string> = {
   UNISEX: '공용',
-  MALE: '남성',
-  FEMALE: '여성',
+  MEN: '남성',
+  WOMEN: '여성',
 }
 
 type AdminProductsTabProps = {
@@ -227,7 +227,7 @@ export default function AdminProductsTab({
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {(product.status === 'PENDING' || product.status === 'REJECTED') && (
+                      {product.status === 'PENDING' && (
                         <button
                           type="button"
                           className="ws-btn ws-btn-sm ws-btn-success"

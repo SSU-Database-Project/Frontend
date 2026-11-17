@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { adjustOptionStock } from '../../services/mockStore'
+import { useEffect, useState, type FormEvent } from 'react'
+import { adjustOptionStock, getStockHistory } from '../../services/mockStore'
 import type { Product, StockHistoryItem, StockHistoryType } from '../../types/commerce'
 
 const HISTORY_TYPE_LABEL: Record<StockHistoryType, string> = {
@@ -38,6 +38,22 @@ export default function SellerInventoryTab({
   const [changeQty, setChangeQty] = useState<string>('10')
   const [memo, setMemo] = useState('')
   const [historyFilterOptionId, setHistoryFilterOptionId] = useState<number | 'ALL'>('ALL')
+  const [optionHistory, setOptionHistory] = useState<StockHistoryItem[] | null>(null)
+
+  useEffect(() => {
+    if (historyFilterOptionId === 'ALL') return
+    let active = true
+    void getStockHistory(undefined, historyFilterOptionId, products)
+      .then(items => {
+        if (active) setOptionHistory(items)
+      })
+      .catch(() => {
+        if (active) setOptionHistory(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [historyFilterOptionId, products, stockHistory])
 
   const visibleProducts = products.filter(
     p => selectedProductId === 'ALL' || p.id === selectedProductId,
@@ -84,7 +100,9 @@ export default function SellerInventoryTab({
     }
   }
 
-  const filteredHistory = stockHistory.filter(
+  const baseHistory =
+    historyFilterOptionId === 'ALL' ? stockHistory : (optionHistory ?? stockHistory)
+  const filteredHistory = baseHistory.filter(
     h =>
       (selectedProductId === 'ALL' || h.productId === selectedProductId) &&
       (historyFilterOptionId === 'ALL' || h.optionId === historyFilterOptionId),

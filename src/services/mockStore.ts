@@ -1,5 +1,14 @@
-import { apiRequest, IS_MOCK_MODE } from './api'
+import { API_BASE_URL, apiRequest, AUTH_TOKEN_KEY, IS_MOCK_MODE } from './api'
 import type { SignupInput } from '../types/auth'
+import blousonPhoto from '../assets/catalog/blouson.webp'
+import capPhoto from '../assets/catalog/cap.webp'
+import denimPhoto from '../assets/catalog/denim.webp'
+import hoodiePhoto from '../assets/catalog/hoodie.webp'
+import knitPhoto from '../assets/catalog/knit.webp'
+import shirtPhoto from '../assets/catalog/shirt.webp'
+import slacksPhoto from '../assets/catalog/slacks.webp'
+import stripePhoto from '../assets/catalog/stripe.webp'
+import trenchPhoto from '../assets/catalog/trench.webp'
 import totePhoto from '../assets/seam-tote.webp'
 import type {
   Brand,
@@ -14,20 +23,29 @@ import type {
   SalesStatPoint,
   SellerShipment,
   ShipmentStatus,
+  SizeGroup,
   SizeOption,
   StatPeriod,
   StockHistoryItem,
+  StockHistoryType,
   TopProductStat,
   UserItem,
+  UserStatus,
 } from '../types/commerce'
+import type { Role } from '../types/role'
 
 export const MOCK_SESSION_KEY = 'seam_mock_user_id'
 
 function currentSellerId() {
-  return Number(sessionStorage.getItem(MOCK_SESSION_KEY))
+  return Number(sessionStorage.getItem(MOCK_SESSION_KEY)) || 2
 }
 
-const STORAGE_KEY = 'seam_mock_db_v4'
+const STORAGE_KEY = 'seam_mock_db_v5'
+const PENDING_BRAND_PRODUCTS_KEY = 'seam_pending_brand_products_v1'
+const DELETED_BRAND_IDS_KEY = 'seam_deleted_brand_ids_v1'
+const DELETED_PRODUCT_IDS_KEY = 'seam_deleted_product_ids_v1'
+const SHIPMENT_OVERRIDES_KEY = 'seam_shipment_overrides_v1'
+
 function createSvgSample(bg: string, fg: string, title: string, subtitle: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="750" viewBox="0 0 600 750">
     <rect width="600" height="750" fill="${bg}"/>
@@ -39,90 +57,181 @@ function createSvgSample(bg: string, fg: string, title: string, subtitle: string
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
+const SAMPLE_SVG_SHOES = createSvgSample('#3b2e28', '#ede6df', 'URBAN FOOTWEAR', 'SHOES · ARCHIVE LINE')
+const SAMPLE_SVG_ACCESSORY = createSvgSample('#cfc4b4', '#22201e', 'ESSENTIAL ACC', 'ACCESSORY · FREE SIZE')
+
 export const SAMPLE_PRODUCT_IMAGES: { label: string; url: string }[] = [
-  { label: '캔버스 토트백 (기본 샘플)', url: totePhoto },
-  {
-    label: '울 발마칸 코트 (아우터 샘플)',
-    url: createSvgSample('#2b3036', '#f4f3ef', 'WOOL BALMACAAN COAT', 'OUTERWEAR · 26FW COLLECTION'),
-  },
-  {
-    label: '헤비웨이트 스웻셔츠 (상의 샘플)',
-    url: createSvgSample('#d8dad5', '#1c201e', 'HEAVYWEIGHT SWEAT', 'TOP · UNISEX ARCHIVE'),
-  },
-  {
-    label: '와이드 셀비지 데님 (바지 샘플)',
-    url: createSvgSample('#23395d', '#f5f6f8', 'WIDE SELVEDGE DENIM', 'BOTTOM · INDIGO WASHED'),
-  },
-  {
-    label: '더비 레더 로퍼 (신발 샘플)',
-    url: createSvgSample('#3b2e28', '#ede6df', 'DERBY LEATHER LOAFER', 'FOOTWEAR · HANDCRAFTED'),
-  },
-  {
-    label: '캐시미어 머플러 (액세서리 샘플)',
-    url: createSvgSample('#cfc4b4', '#22201e', 'CASHMERE MUFFLER', 'ACCESSORY · FREE SIZE'),
-  },
+  { label: '캔버스 토트백 (가방 샘플)', url: totePhoto },
+  { label: '발마칸 트렌치 코트 (아우터 샘플)', url: trenchPhoto },
+  { label: '오버핏 후드 스웻 (상의 샘플)', url: hoodiePhoto },
+  { label: '와이드 데님 팬츠 (바지 샘플)', url: denimPhoto },
+  { label: '옥스포드 셔츠 (셔츠 샘플)', url: shirtPhoto },
+  { label: '램스울 크루넥 니트 (니트 샘플)', url: knitPhoto },
+  { label: '워크웨어 블루종 자켓 (자켓 샘플)', url: blousonPhoto },
+  { label: '와이드 슬랙스 (슬랙스 샘플)', url: slacksPhoto },
+  { label: '스트라이프 티셔츠 (티셔츠 샘플)', url: stripePhoto },
+  { label: '코튼 볼캡 (모자 샘플)', url: capPhoto },
 ]
 
+const SAMPLE_FILE_IMAGE_MAP: Record<string, string> = {
+  'tee.jpg': stripePhoto,
+  'longsleeve.jpg': stripePhoto,
+  'shirt.jpg': shirtPhoto,
+  'knit.jpg': knitPhoto,
+  'hoodie.jpg': hoodiePhoto,
+  'jacket.jpg': blousonPhoto,
+  'coat.jpg': trenchPhoto,
+  'padding.jpg': blousonPhoto,
+  'cardigan.jpg': knitPhoto,
+  'denim.jpg': denimPhoto,
+  'slacks.jpg': slacksPhoto,
+  'training.jpg': slacksPhoto,
+  'shorts.jpg': denimPhoto,
+  'dress.jpg': trenchPhoto,
+  'skirt.jpg': slacksPhoto,
+  'sneakers.jpg': SAMPLE_SVG_SHOES,
+  'loafers.jpg': SAMPLE_SVG_SHOES,
+  'backpack.jpg': totePhoto,
+  'crossbag.jpg': totePhoto,
+  'cap.jpg': capPhoto,
+  'beanie.jpg': capPhoto,
+  'socks.jpg': SAMPLE_SVG_ACCESSORY,
+}
+
+export function resolveProductImageUrl(rawUrl?: string | null): string {
+  if (!rawUrl || !rawUrl.trim()) {
+    return SAMPLE_PRODUCT_IMAGES[0].url
+  }
+  const trimmed = rawUrl.trim()
+  if (trimmed.startsWith('/images/samples/')) {
+    const fileName = trimmed.slice('/images/samples/'.length).toLowerCase()
+    return SAMPLE_FILE_IMAGE_MAP[fileName] ?? SAMPLE_PRODUCT_IMAGES[0].url
+  }
+  if (trimmed.startsWith('/images/')) {
+    return `${API_BASE_URL.replace(/\/$/, '')}${trimmed}`
+  }
+  return trimmed
+}
+
+function sanitizeImageUrlForBackend(rawUrl?: string | null): string {
+  if (!rawUrl || !rawUrl.trim()) {
+    return '/images/samples/tee.jpg'
+  }
+  const trimmed = rawUrl.trim()
+  const basePrefix = API_BASE_URL.replace(/\/$/, '')
+  if (trimmed.startsWith(basePrefix + '/images/')) {
+    return trimmed.slice(basePrefix.length)
+  }
+  if (trimmed.startsWith('data:') || trimmed.length > 500) {
+    return '/images/samples/tee.jpg'
+  }
+  return trimmed
+}
+
+export async function uploadSellerImage(file: File): Promise<string> {
+  if (IS_MOCK_MODE) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result)
+        } else {
+          reject(new Error('이미지 파일을 읽지 못했습니다.'))
+        }
+      }
+      reader.onerror = () => reject(new Error('이미지 파일을 읽지 못했습니다.'))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await apiRequest<{ url: string }>('/api/seller/images', {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response?.url) {
+    throw new Error('이미지 업로드 경로를 받지 못했습니다.')
+  }
+  return resolveProductImageUrl(response.url)
+}
+
+/**
+ * 백엔드 V4__fashion_mall_redesign.sql 고정 참조 데이터와 100% 동일한 ID 및 체계
+ */
 export const FIXED_CATEGORIES: Category[] = [
   // 대분류 (parentId: null)
   { id: 1, parentId: null, name: '상의', sizeGroup: 'CLOTHING' },
   { id: 2, parentId: null, name: '아우터', sizeGroup: 'CLOTHING' },
   { id: 3, parentId: null, name: '바지', sizeGroup: 'CLOTHING' },
-  { id: 4, parentId: null, name: '원피스·스커트', sizeGroup: 'CLOTHING' },
+  { id: 4, parentId: null, name: '원피스/스커트', sizeGroup: 'CLOTHING' },
   { id: 5, parentId: null, name: '신발', sizeGroup: 'SHOES' },
   { id: 6, parentId: null, name: '가방', sizeGroup: 'FREE' },
   { id: 7, parentId: null, name: '모자', sizeGroup: 'FREE' },
   { id: 8, parentId: null, name: '액세서리', sizeGroup: 'FREE' },
   // 소분류 (leaf categories)
-  { id: 101, parentId: 1, name: '맨투맨·스웻셔츠', sizeGroup: 'CLOTHING' },
-  { id: 102, parentId: 1, name: '셔츠·블라우스', sizeGroup: 'CLOTHING' },
-  { id: 103, parentId: 1, name: '니트·스웨터', sizeGroup: 'CLOTHING' },
-  { id: 104, parentId: 1, name: '반소매 티셔츠', sizeGroup: 'CLOTHING' },
-  { id: 201, parentId: 2, name: '코트', sizeGroup: 'CLOTHING' },
-  { id: 202, parentId: 2, name: '자켓·블루종', sizeGroup: 'CLOTHING' },
-  { id: 203, parentId: 2, name: '패딩·다운', sizeGroup: 'CLOTHING' },
-  { id: 301, parentId: 3, name: '데님 팬츠', sizeGroup: 'CLOTHING' },
-  { id: 302, parentId: 3, name: '슬랙스·트라우저', sizeGroup: 'CLOTHING' },
-  { id: 303, parentId: 3, name: '코튼 팬츠', sizeGroup: 'CLOTHING' },
-  { id: 401, parentId: 4, name: '미디·롱 스커트', sizeGroup: 'CLOTHING' },
-  { id: 402, parentId: 4, name: '캐주얼 원피스', sizeGroup: 'CLOTHING' },
-  { id: 501, parentId: 5, name: '구두·로퍼', sizeGroup: 'SHOES' },
-  { id: 502, parentId: 5, name: '스니커즈', sizeGroup: 'SHOES' },
-  { id: 503, parentId: 5, name: '부츠', sizeGroup: 'SHOES' },
-  { id: 601, parentId: 6, name: '토트·숄더백', sizeGroup: 'FREE' },
-  { id: 602, parentId: 6, name: '백팩·크로스백', sizeGroup: 'FREE' },
-  { id: 701, parentId: 7, name: '볼캡·비니', sizeGroup: 'FREE' },
-  { id: 801, parentId: 8, name: '머플러·스카프', sizeGroup: 'FREE' },
-  { id: 802, parentId: 8, name: '벨트·주얼리', sizeGroup: 'FREE' },
+  { id: 11, parentId: 1, name: '반소매 티셔츠', sizeGroup: 'CLOTHING' },
+  { id: 12, parentId: 1, name: '긴소매 티셔츠', sizeGroup: 'CLOTHING' },
+  { id: 13, parentId: 1, name: '셔츠/블라우스', sizeGroup: 'CLOTHING' },
+  { id: 14, parentId: 1, name: '니트/스웨터', sizeGroup: 'CLOTHING' },
+  { id: 15, parentId: 1, name: '후드/맨투맨', sizeGroup: 'CLOTHING' },
+  { id: 21, parentId: 2, name: '자켓', sizeGroup: 'CLOTHING' },
+  { id: 22, parentId: 2, name: '코트', sizeGroup: 'CLOTHING' },
+  { id: 23, parentId: 2, name: '패딩', sizeGroup: 'CLOTHING' },
+  { id: 24, parentId: 2, name: '가디건', sizeGroup: 'CLOTHING' },
+  { id: 31, parentId: 3, name: '데님 팬츠', sizeGroup: 'CLOTHING' },
+  { id: 32, parentId: 3, name: '슬랙스', sizeGroup: 'CLOTHING' },
+  { id: 33, parentId: 3, name: '트레이닝 팬츠', sizeGroup: 'CLOTHING' },
+  { id: 34, parentId: 3, name: '숏 팬츠', sizeGroup: 'CLOTHING' },
+  { id: 41, parentId: 4, name: '원피스', sizeGroup: 'CLOTHING' },
+  { id: 42, parentId: 4, name: '스커트', sizeGroup: 'CLOTHING' },
+  { id: 51, parentId: 5, name: '스니커즈', sizeGroup: 'SHOES' },
+  { id: 52, parentId: 5, name: '구두/로퍼', sizeGroup: 'SHOES' },
+  { id: 53, parentId: 5, name: '샌들/슬리퍼', sizeGroup: 'SHOES' },
+  { id: 54, parentId: 5, name: '부츠', sizeGroup: 'SHOES' },
+  { id: 61, parentId: 6, name: '백팩', sizeGroup: 'FREE' },
+  { id: 62, parentId: 6, name: '크로스백', sizeGroup: 'FREE' },
+  { id: 63, parentId: 6, name: '토트백', sizeGroup: 'FREE' },
+  { id: 71, parentId: 7, name: '캡/야구모자', sizeGroup: 'FREE' },
+  { id: 72, parentId: 7, name: '비니', sizeGroup: 'FREE' },
+  { id: 73, parentId: 7, name: '버킷햇', sizeGroup: 'FREE' },
+  { id: 81, parentId: 8, name: '양말', sizeGroup: 'FREE' },
+  { id: 82, parentId: 8, name: '벨트', sizeGroup: 'FREE' },
+  { id: 83, parentId: 8, name: '주얼리', sizeGroup: 'FREE' },
 ]
 
 export const FIXED_COLORS: ColorOption[] = [
-  { id: 1, name: '블랙', hexCode: '#181818' },
-  { id: 2, name: '화이트', hexCode: '#f8f8f6' },
-  { id: 3, name: '네이비', hexCode: '#1c2d4a' },
-  { id: 4, name: '코발트 블루', hexCode: '#2041bc' },
-  { id: 5, name: '그레이', hexCode: '#8c908c' },
-  { id: 6, name: '차콜', hexCode: '#3b3e3c' },
-  { id: 7, name: '베이지', hexCode: '#d2c2aa' },
-  { id: 8, name: '크림', hexCode: '#efeadd' },
-  { id: 9, name: '카키', hexCode: '#555d47' },
-  { id: 10, name: '브라운', hexCode: '#654633' },
-  { id: 11, name: '버건디', hexCode: '#68212b' },
-  { id: 12, name: '데님 블루', hexCode: '#3b5b8c' },
+  { id: 1, name: '블랙', hexCode: '#000000' },
+  { id: 2, name: '화이트', hexCode: '#FFFFFF' },
+  { id: 3, name: '그레이', hexCode: '#8E8E8E' },
+  { id: 4, name: '네이비', hexCode: '#1F2A44' },
+  { id: 5, name: '베이지', hexCode: '#D8C3A5' },
+  { id: 6, name: '브라운', hexCode: '#6B4423' },
+  { id: 7, name: '카키', hexCode: '#5B5F3A' },
+  { id: 8, name: '레드', hexCode: '#C62828' },
+  { id: 9, name: '핑크', hexCode: '#F4A6C0' },
+  { id: 10, name: '블루', hexCode: '#1E5BB8' },
+  { id: 11, name: '그린', hexCode: '#2E7D32' },
+  { id: 12, name: '옐로우', hexCode: '#F2C94C' },
 ]
 
 export const FIXED_SIZES: SizeOption[] = [
-  { id: 1, sizeGroup: 'CLOTHING', label: 'S' },
-  { id: 2, sizeGroup: 'CLOTHING', label: 'M' },
-  { id: 3, sizeGroup: 'CLOTHING', label: 'L' },
-  { id: 4, sizeGroup: 'CLOTHING', label: 'XL' },
-  { id: 5, sizeGroup: 'SHOES', label: '230' },
-  { id: 6, sizeGroup: 'SHOES', label: '240' },
-  { id: 7, sizeGroup: 'SHOES', label: '250' },
-  { id: 8, sizeGroup: 'SHOES', label: '260' },
-  { id: 9, sizeGroup: 'SHOES', label: '270' },
-  { id: 10, sizeGroup: 'SHOES', label: '280' },
-  { id: 11, sizeGroup: 'FREE', label: 'FREE' },
+  { id: 1, sizeGroup: 'CLOTHING', label: 'XS' },
+  { id: 2, sizeGroup: 'CLOTHING', label: 'S' },
+  { id: 3, sizeGroup: 'CLOTHING', label: 'M' },
+  { id: 4, sizeGroup: 'CLOTHING', label: 'L' },
+  { id: 5, sizeGroup: 'CLOTHING', label: 'XL' },
+  { id: 6, sizeGroup: 'CLOTHING', label: 'XXL' },
+  { id: 11, sizeGroup: 'SHOES', label: '220' },
+  { id: 12, sizeGroup: 'SHOES', label: '230' },
+  { id: 13, sizeGroup: 'SHOES', label: '240' },
+  { id: 14, sizeGroup: 'SHOES', label: '250' },
+  { id: 15, sizeGroup: 'SHOES', label: '260' },
+  { id: 16, sizeGroup: 'SHOES', label: '270' },
+  { id: 17, sizeGroup: 'SHOES', label: '280' },
+  { id: 18, sizeGroup: 'SHOES', label: '290' },
+  { id: 19, sizeGroup: 'SHOES', label: '300' },
+  { id: 21, sizeGroup: 'FREE', label: 'FREE' },
 ]
 
 export type SellerTabKey = 'brands' | 'products' | 'inventory' | 'orders' | 'stats'
@@ -277,9 +386,9 @@ function createInitialDatabase(): MockDatabase {
       brandName: 'SEAM STUDIO',
       sellerId: 2,
       sellerName: '(주)심스튜디오',
-      categoryId: 601,
+      categoryId: 63,
       parentCategoryName: '가방',
-      categoryName: '토트·숄더백',
+      categoryName: '토트백',
       sizeGroup: 'FREE',
       name: '헤비 캔버스 스티치 토트백',
       productCode: 'SEAM-26FW-001',
@@ -294,10 +403,10 @@ function createInitialDatabase(): MockDatabase {
         {
           id: 1001,
           productId: 101,
-          colorId: 4,
-          colorName: '코발트 블루',
-          hexCode: '#2041bc',
-          sizeId: 11,
+          colorId: 10,
+          colorName: '블루',
+          hexCode: '#1E5BB8',
+          sizeId: 21,
           sizeLabel: 'FREE',
           stockQuantity: 28,
         },
@@ -306,8 +415,8 @@ function createInitialDatabase(): MockDatabase {
           productId: 101,
           colorId: 1,
           colorName: '블랙',
-          hexCode: '#181818',
-          sizeId: 11,
+          hexCode: '#000000',
+          sizeId: 21,
           sizeLabel: 'FREE',
           stockQuantity: 14,
         },
@@ -319,7 +428,7 @@ function createInitialDatabase(): MockDatabase {
       brandName: 'SEAM STUDIO',
       sellerId: 2,
       sellerName: '(주)심스튜디오',
-      categoryId: 201,
+      categoryId: 22,
       parentCategoryName: '아우터',
       categoryName: '코트',
       sizeGroup: 'CLOTHING',
@@ -336,20 +445,20 @@ function createInitialDatabase(): MockDatabase {
         {
           id: 1003,
           productId: 102,
-          colorId: 6,
-          colorName: '차콜',
-          hexCode: '#3b3e3c',
-          sizeId: 2,
+          colorId: 3,
+          colorName: '그레이',
+          hexCode: '#8E8E8E',
+          sizeId: 3,
           sizeLabel: 'M',
           stockQuantity: 9,
         },
         {
           id: 1004,
           productId: 102,
-          colorId: 6,
-          colorName: '차콜',
-          hexCode: '#3b3e3c',
-          sizeId: 3,
+          colorId: 3,
+          colorName: '그레이',
+          hexCode: '#8E8E8E',
+          sizeId: 4,
           sizeLabel: 'L',
           stockQuantity: 6,
         },
@@ -358,8 +467,8 @@ function createInitialDatabase(): MockDatabase {
           productId: 102,
           colorId: 1,
           colorName: '블랙',
-          hexCode: '#181818',
-          sizeId: 3,
+          hexCode: '#000000',
+          sizeId: 4,
           sizeLabel: 'L',
           stockQuantity: 3,
         },
@@ -371,9 +480,9 @@ function createInitialDatabase(): MockDatabase {
       brandName: 'SEAM STUDIO',
       sellerId: 2,
       sellerName: '(주)심스튜디오',
-      categoryId: 101,
+      categoryId: 15,
       parentCategoryName: '상의',
-      categoryName: '맨투맨·스웻셔츠',
+      categoryName: '후드/맨투맨',
       sizeGroup: 'CLOTHING',
       name: '헤비웨이트 루즈핏 아카이브 스웻셔츠',
       productCode: 'SEAM-26FW-003',
@@ -388,30 +497,30 @@ function createInitialDatabase(): MockDatabase {
         {
           id: 1006,
           productId: 103,
-          colorId: 5,
+          colorId: 3,
           colorName: '그레이',
-          hexCode: '#8c908c',
-          sizeId: 2,
+          hexCode: '#8E8E8E',
+          sizeId: 3,
           sizeLabel: 'M',
           stockQuantity: 20,
         },
         {
           id: 1007,
           productId: 103,
-          colorId: 5,
+          colorId: 3,
           colorName: '그레이',
-          hexCode: '#8c908c',
-          sizeId: 3,
+          hexCode: '#8E8E8E',
+          sizeId: 4,
           sizeLabel: 'L',
           stockQuantity: 25,
         },
         {
           id: 1008,
           productId: 103,
-          colorId: 3,
+          colorId: 4,
           colorName: '네이비',
-          hexCode: '#1c2d4a',
-          sizeId: 3,
+          hexCode: '#1F2A44',
+          sizeId: 4,
           sizeLabel: 'L',
           stockQuantity: 15,
         },
@@ -423,13 +532,13 @@ function createInitialDatabase(): MockDatabase {
       brandName: 'SEAM STUDIO',
       sellerId: 2,
       sellerName: '(주)심스튜디오',
-      categoryId: 301,
+      categoryId: 31,
       parentCategoryName: '바지',
       categoryName: '데님 팬츠',
       sizeGroup: 'CLOTHING',
       name: '와이드 셀비지 데님 트라우저',
       productCode: 'SEAM-26FW-004',
-      gender: 'MALE',
+      gender: 'MEN',
       season: '26FW',
       shipDays: 3,
       price: 138000,
@@ -441,20 +550,20 @@ function createInitialDatabase(): MockDatabase {
         {
           id: 1009,
           productId: 104,
-          colorId: 12,
-          colorName: '데님 블루',
-          hexCode: '#3b5b8c',
-          sizeId: 2,
+          colorId: 10,
+          colorName: '블루',
+          hexCode: '#1E5BB8',
+          sizeId: 3,
           sizeLabel: 'M',
           stockQuantity: 12,
         },
         {
           id: 1010,
           productId: 104,
-          colorId: 12,
-          colorName: '데님 블루',
-          hexCode: '#3b5b8c',
-          sizeId: 3,
+          colorId: 10,
+          colorName: '블루',
+          hexCode: '#1E5BB8',
+          sizeId: 4,
           sizeLabel: 'L',
           stockQuantity: 10,
         },
@@ -466,9 +575,9 @@ function createInitialDatabase(): MockDatabase {
       brandName: 'SEAM STUDIO',
       sellerId: 2,
       sellerName: '(주)심스튜디오',
-      categoryId: 501,
+      categoryId: 52,
       parentCategoryName: '신발',
-      categoryName: '구두·로퍼',
+      categoryName: '구두/로퍼',
       sizeGroup: 'SHOES',
       name: '스퀘어토 더비 레더 로퍼',
       productCode: 'SEAM-26FW-005',
@@ -476,7 +585,7 @@ function createInitialDatabase(): MockDatabase {
       season: '26FW',
       shipDays: 3,
       price: 198000,
-      imageUrl: SAMPLE_PRODUCT_IMAGES[4].url,
+      imageUrl: SAMPLE_SVG_SHOES,
       status: 'SOLD_OUT',
       createdAt: '2026-10-25T09:30:00',
       options: [
@@ -485,18 +594,18 @@ function createInitialDatabase(): MockDatabase {
           productId: 105,
           colorId: 1,
           colorName: '블랙',
-          hexCode: '#181818',
-          sizeId: 8,
+          hexCode: '#000000',
+          sizeId: 15,
           sizeLabel: '260',
           stockQuantity: 0,
         },
         {
           id: 1012,
           productId: 105,
-          colorId: 10,
+          colorId: 6,
           colorName: '브라운',
-          hexCode: '#654633',
-          sizeId: 9,
+          hexCode: '#6B4423',
+          sizeId: 16,
           sizeLabel: '270',
           stockQuantity: 2,
         },
@@ -508,27 +617,27 @@ function createInitialDatabase(): MockDatabase {
       brandName: 'ATELIER K',
       sellerId: 3,
       sellerName: '아틀리에케이 주식회사',
-      categoryId: 801,
+      categoryId: 83,
       parentCategoryName: '액세서리',
-      categoryName: '머플러·스카프',
+      categoryName: '주얼리',
       sizeGroup: 'FREE',
       name: '퓨어 캐시미어 프린지 머플러',
       productCode: 'ATEL-26FW-010',
-      gender: 'FEMALE',
+      gender: 'WOMEN',
       season: '26FW',
       shipDays: 1,
       price: 145000,
-      imageUrl: SAMPLE_PRODUCT_IMAGES[5].url,
+      imageUrl: SAMPLE_SVG_ACCESSORY,
       status: 'ON_SALE',
       createdAt: '2026-10-27T12:00:00',
       options: [
         {
           id: 1013,
           productId: 106,
-          colorId: 7,
+          colorId: 5,
           colorName: '베이지',
-          hexCode: '#d2c2aa',
-          sizeId: 11,
+          hexCode: '#D8C3A5',
+          sizeId: 21,
           sizeLabel: 'FREE',
           stockQuantity: 18,
         },
@@ -543,7 +652,7 @@ function createInitialDatabase(): MockDatabase {
       productId: 101,
       productName: '헤비 캔버스 스티치 토트백',
       productCode: 'SEAM-26FW-001',
-      colorName: '코발트 블루',
+      colorName: '블루',
       sizeLabel: 'FREE',
       changeQty: 30,
       quantityAfter: 30,
@@ -557,7 +666,7 @@ function createInitialDatabase(): MockDatabase {
       productId: 101,
       productName: '헤비 캔버스 스티치 토트백',
       productCode: 'SEAM-26FW-001',
-      colorName: '코발트 블루',
+      colorName: '블루',
       sizeLabel: 'FREE',
       changeQty: -2,
       quantityAfter: 28,
@@ -572,7 +681,7 @@ function createInitialDatabase(): MockDatabase {
       productId: 102,
       productName: '울 블렌드 오버핏 발마칸 코트',
       productCode: 'SEAM-26FW-002',
-      colorName: '차콜',
+      colorName: '그레이',
       sizeLabel: 'M',
       changeQty: 10,
       quantityAfter: 10,
@@ -586,7 +695,7 @@ function createInitialDatabase(): MockDatabase {
       productId: 102,
       productName: '울 블렌드 오버핏 발마칸 코트',
       productCode: 'SEAM-26FW-002',
-      colorName: '차콜',
+      colorName: '그레이',
       sizeLabel: 'M',
       changeQty: -1,
       quantityAfter: 9,
@@ -631,7 +740,7 @@ function createInitialDatabase(): MockDatabase {
           productId: 101,
           productName: '헤비 캔버스 스티치 토트백',
           productCode: 'SEAM-26FW-001',
-          colorName: '코발트 블루',
+          colorName: '블루',
           sizeLabel: 'FREE',
           unitPrice: 89000,
           quantity: 2,
@@ -657,7 +766,7 @@ function createInitialDatabase(): MockDatabase {
           productId: 102,
           productName: '울 블렌드 오버핏 발마칸 코트',
           productCode: 'SEAM-26FW-002',
-          colorName: '차콜',
+          colorName: '그레이',
           sizeLabel: 'M',
           unitPrice: 289000,
           quantity: 1,
@@ -683,7 +792,7 @@ function createInitialDatabase(): MockDatabase {
           productId: 102,
           productName: '울 블렌드 오버핏 발마칸 코트',
           productCode: 'SEAM-26FW-002',
-          colorName: '차콜',
+          colorName: '그레이',
           sizeLabel: 'L',
           unitPrice: 289000,
           quantity: 1,
@@ -774,7 +883,7 @@ function createInitialDatabase(): MockDatabase {
           productId: 101,
           productName: '헤비 캔버스 스티치 토트백',
           productCode: 'SEAM-26FW-001',
-          colorName: '코발트 블루',
+          colorName: '블루',
           sizeLabel: 'FREE',
           unitPrice: 89000,
           quantity: 1,
@@ -935,6 +1044,313 @@ export function getCatalogData() {
 }
 
 // ============================================================================
+// BACKEND DTO MAPPERS & HELPERS
+// ============================================================================
+
+type BackendBrandDto = {
+  id: number
+  sellerId: number
+  sellerCompanyName?: string | null
+  sellerName?: string | null
+  name: string
+  description?: string | null
+  logoUrl?: string | null
+  status: BrandStatus
+  rejectReason?: string | null
+  createdAt?: string | null
+}
+
+type BackendOptionDto = {
+  optionId?: number
+  id?: number
+  colorId: number
+  colorName: string
+  hexCode: string
+  sizeId: number
+  sizeLabel: string
+  stock?: number
+  stockQuantity?: number
+  soldOut?: boolean
+}
+
+type BackendProductSummaryDto = {
+  id: number
+  productCode: string
+  name: string
+  price: number
+  imageUrl?: string | null
+  status: ProductStatus
+  soldOut?: boolean
+  totalStock?: number
+  brandId: number
+  brandName: string
+  categoryId: number
+  categoryName: string
+  gender: string
+  season: string
+  createdAt?: string | null
+}
+
+type BackendProductDetailDto = BackendProductSummaryDto & {
+  description?: string | null
+  shipDays?: number
+  rejectReason?: string | null
+  sellerId?: number
+  sellerCompanyName?: string | null
+  sizeGroup?: SizeGroup
+  options?: BackendOptionDto[]
+  updatedAt?: string | null
+}
+
+type BackendStockHistoryDto = {
+  id: number
+  type: StockHistoryType
+  changeQty: number
+  quantityAfter: number
+  orderItemId?: number | null
+  memo?: string | null
+  createdAt?: string | null
+}
+
+type BackendOrderItemDto = {
+  orderItemId?: number
+  id?: number
+  optionId: number
+  productId: number
+  productName: string
+  productCode?: string
+  colorName: string
+  sizeLabel: string
+  imageUrl?: string | null
+  unitPrice: number
+  quantity: number
+  lineTotal?: number
+}
+
+type BackendSellerShipmentDto = {
+  shipmentId?: number
+  id?: number
+  orderId: number
+  orderNumber?: string
+  sellerId?: number
+  brandName?: string
+  status: ShipmentStatus
+  orderedAt?: string | null
+  createdAt?: string | null
+  confirmedAt?: string | null
+  canceledAt?: string | null
+  subtotal?: number
+  totalAmount?: number
+  receiverName?: string | null
+  buyerName?: string | null
+  receiverPhone?: string | null
+  buyerEmail?: string | null
+  zipCode?: string | null
+  address?: string | null
+  addressDetail?: string | null
+  items?: BackendOrderItemDto[]
+}
+
+type BackendAdminUserDto = {
+  id: number
+  email: string
+  name: string
+  phone?: string | null
+  role: Role
+  status: UserStatus
+  createdAt?: string | null
+  withdrawnAt?: string | null
+}
+
+type BackendSalesPointDto = {
+  periodStart: string
+  quantity: number
+  revenue: number
+  orderCount: number
+}
+
+type BackendSalesStatsResponse = {
+  period: string
+  from: string
+  to: string
+  totalQuantity: number
+  totalRevenue: number
+  totalOrders: number
+  points: BackendSalesPointDto[]
+}
+
+type BackendTopProductDto = {
+  rank: number
+  productId: number
+  productCode: string
+  productName: string
+  quantity: number
+  revenue: number
+}
+
+type BackendTopProductsResponse = {
+  from: string
+  to: string
+  sort: string
+  products: BackendTopProductDto[]
+}
+
+function normalizeGender(value?: string | null): Gender {
+  if (value === 'MEN' || value === 'MALE') return 'MEN'
+  if (value === 'WOMEN' || value === 'FEMALE') return 'WOMEN'
+  return 'UNISEX'
+}
+
+function getCategoryMeta(categoryId: number, fallbackCategoryName?: string, fallbackSizeGroup?: SizeGroup) {
+  const leaf = FIXED_CATEGORIES.find(c => c.id === categoryId)
+  const parent = leaf?.parentId ? FIXED_CATEGORIES.find(c => c.id === leaf.parentId) : undefined
+  return {
+    categoryName: leaf?.name ?? fallbackCategoryName ?? '기타',
+    parentCategoryName: parent?.name ?? '패션',
+    sizeGroup: leaf?.sizeGroup ?? fallbackSizeGroup ?? 'CLOTHING',
+  }
+}
+
+function mapBackendBrand(dto: BackendBrandDto, fallbackSellerName = '내 브랜드'): Brand {
+  return {
+    id: dto.id,
+    sellerId: dto.sellerId,
+    sellerName: dto.sellerCompanyName ?? dto.sellerName ?? fallbackSellerName,
+    name: dto.name,
+    description: dto.description ?? '',
+    status: dto.status,
+    rejectReason: dto.rejectReason ?? undefined,
+    createdAt: dto.createdAt ?? new Date().toISOString().slice(0, 19),
+  }
+}
+
+function mapBackendProductDetail(dto: BackendProductDetailDto): Product {
+  const catMeta = getCategoryMeta(dto.categoryId, dto.categoryName, dto.sizeGroup)
+  const options: ProductOption[] = (dto.options ?? []).map(opt => ({
+    id: opt.optionId ?? opt.id ?? 0,
+    productId: dto.id,
+    colorId: opt.colorId,
+    colorName: opt.colorName,
+    hexCode: opt.hexCode,
+    sizeId: opt.sizeId,
+    sizeLabel: opt.sizeLabel,
+    stockQuantity: opt.stock ?? opt.stockQuantity ?? 0,
+  }))
+
+  return {
+    id: dto.id,
+    brandId: dto.brandId,
+    brandName: dto.brandName,
+    sellerId: dto.sellerId ?? 0,
+    sellerName: dto.sellerCompanyName ?? dto.brandName,
+    categoryId: dto.categoryId,
+    parentCategoryName: catMeta.parentCategoryName,
+    categoryName: dto.categoryName || catMeta.categoryName,
+    sizeGroup: dto.sizeGroup ?? catMeta.sizeGroup,
+    name: dto.name,
+    productCode: dto.productCode,
+    gender: normalizeGender(dto.gender),
+    season: dto.season,
+    shipDays: dto.shipDays ?? 2,
+    price: dto.price,
+    imageUrl: resolveProductImageUrl(dto.imageUrl),
+    status: dto.status,
+    rejectReason: dto.rejectReason ?? undefined,
+    options,
+    createdAt: dto.createdAt ?? new Date().toISOString().slice(0, 19),
+  }
+}
+
+let cachedSellerProducts: Product[] = []
+
+function loadIdSet(storageKey: string): Set<number> {
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return new Set()
+    const arr = JSON.parse(raw) as number[]
+    return new Set(Array.isArray(arr) ? arr : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function saveIdSet(storageKey: string, set: Set<number>): void {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(Array.from(set)))
+  } catch {
+    // Ignore
+  }
+}
+
+type PendingBrandProductEntry = {
+  brandId: number
+  brandName: string
+  sellerToken?: string | null
+  draft: InitialProductDraftInput
+}
+
+function loadPendingBrandProducts(): PendingBrandProductEntry[] {
+  try {
+    const raw = localStorage.getItem(PENDING_BRAND_PRODUCTS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as PendingBrandProductEntry[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function savePendingBrandProducts(entries: PendingBrandProductEntry[]): void {
+  try {
+    localStorage.setItem(PENDING_BRAND_PRODUCTS_KEY, JSON.stringify(entries))
+  } catch {
+    // Ignore
+  }
+}
+
+async function flushPendingBrandProductForBrand(brandId: number, tokenOverride?: string | null): Promise<void> {
+  const entries = loadPendingBrandProducts()
+  const target = entries.find(e => e.brandId === brandId)
+  if (!target) return
+
+  const remaining = entries.filter(e => e.brandId !== brandId)
+  savePendingBrandProducts(remaining)
+
+  const token = tokenOverride ?? target.sellerToken ?? localStorage.getItem(AUTH_TOKEN_KEY)
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  try {
+    const draft = target.draft
+    await apiRequest<BackendProductDetailDto>('/api/seller/products', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        brandId,
+        categoryId: draft.categoryId,
+        productCode: draft.productCode.trim().toUpperCase(),
+        name: draft.name.trim(),
+        description: `${draft.name.trim()} — 브랜드 대표 상품`,
+        price: draft.price,
+        gender: normalizeGender(draft.gender),
+        season: draft.season.trim().toUpperCase(),
+        shipDays: draft.shipDays,
+        imageUrl: sanitizeImageUrlForBackend(draft.imageUrl),
+        options: draft.options.map(opt => ({
+          colorId: opt.colorId,
+          sizeId: opt.sizeId,
+          stock: opt.stockQuantity,
+        })),
+      }),
+    })
+  } catch {
+    // 이미 등록되었거나 권한 토큰이 만료된 경우 무시
+  }
+}
+
+// ============================================================================
 // SELLER: BRAND APIs
 // ============================================================================
 
@@ -1042,13 +1458,35 @@ export async function getSellerBrands(
 ): Promise<Brand[]> {
   if (IS_MOCK_MODE) {
     const db = loadDb()
-    // 이미 등록(승인 완료)된 브랜드는 별도 신청 없이 모든 판매자가 즉시 사용 가능
     return db.brands
       .filter(b => b.sellerId === sellerId || b.status === 'APPROVED')
       .sort((a, b) => b.id - a.id)
   }
 
-  return apiRequest<Brand[]>('/api/seller/brands')
+  let sellerCompanyName = '내 브랜드'
+  try {
+    const sellerInfo = await apiRequest<{ companyName?: string }>('/api/seller/me')
+    if (sellerInfo?.companyName) {
+      sellerCompanyName = sellerInfo.companyName
+    }
+  } catch {
+    // Ignore if /api/seller/me fails
+  }
+
+  const deletedIds = loadIdSet(DELETED_BRAND_IDS_KEY)
+  const rawBrands = await apiRequest<BackendBrandDto[]>('/api/seller/brands')
+  const mapped = (rawBrands ?? [])
+    .filter(b => !deletedIds.has(b.id))
+    .map(b => mapBackendBrand(b, sellerCompanyName))
+    .sort((a, b) => b.id - a.id)
+
+  for (const b of mapped) {
+    if (b.status === 'APPROVED') {
+      await flushPendingBrandProductForBrand(b.id)
+    }
+  }
+
+  return mapped
 }
 
 export async function createSellerBrand(input: {
@@ -1081,7 +1519,6 @@ export async function createSellerBrand(input: {
       throw new Error('현재 승인 대기 중인 브랜드입니다.')
     }
 
-    // 초기 대표 상품 검증 (동일 브랜드 내 품번 중복 검사 포함)
     const { category, parentCategory, trimmedProductName, trimmedProductCode } =
       validateInitialProductDraftWithDb(db, input.initialProduct, existingBrand?.id)
 
@@ -1090,10 +1527,8 @@ export async function createSellerBrand(input: {
 
     if (existingBrand) {
       if (existingBrand.status === 'APPROVED') {
-        // 이미 등록(승인)되어 있는 브랜드는 별도 신청 없이 바로 사용 가능
         targetBrand = existingBrand
       } else {
-        // 거절되었거나 미승인 상태인 기존 브랜드는 재신청으로 갱신
         existingBrand.sellerId = sellerId
         existingBrand.sellerName = sellerName
         existingBrand.description = input.description.trim() || existingBrand.description
@@ -1122,7 +1557,6 @@ export async function createSellerBrand(input: {
       unread.ADMIN.brands += 1
     }
 
-    // 브랜드 등록 시 필수 초기 대표 상품 생성
     const draft = input.initialProduct
     const productId = db.nextIds.product++
     let addedStockHistoryCount = 0
@@ -1193,14 +1627,52 @@ export async function createSellerBrand(input: {
     return targetBrand
   }
 
-  return apiRequest<Brand>('/api/seller/brands', {
+  const trimmedName = input.name.trim()
+  const existingBrands = await getSellerBrands()
+  const matchedApproved = existingBrands.find(
+    b => b.name.toLowerCase() === trimmedName.toLowerCase() && b.status === 'APPROVED',
+  )
+
+  if (matchedApproved) {
+    if (input.initialProduct) {
+      await createSellerProduct({
+        brandId: matchedApproved.id,
+        ...input.initialProduct,
+      })
+    }
+    return matchedApproved
+  }
+
+  const createdDto = await apiRequest<BackendBrandDto>('/api/seller/brands', {
     method: 'POST',
     body: JSON.stringify({
-      name: input.name.trim(),
-      description: input.description.trim(),
-      initialProduct: input.initialProduct,
+      name: trimmedName,
+      description: input.description.trim() || undefined,
     }),
   })
+  const createdBrand = mapBackendBrand(createdDto)
+
+  if (input.initialProduct) {
+    if (createdBrand.status === 'APPROVED') {
+      await createSellerProduct({
+        brandId: createdBrand.id,
+        ...input.initialProduct,
+      })
+    } else {
+      const pendingEntries = loadPendingBrandProducts().filter(
+        e => e.brandId !== createdBrand.id,
+      )
+      pendingEntries.push({
+        brandId: createdBrand.id,
+        brandName: createdBrand.name,
+        sellerToken: localStorage.getItem(AUTH_TOKEN_KEY),
+        draft: input.initialProduct,
+      })
+      savePendingBrandProducts(pendingEntries)
+    }
+  }
+
+  return createdBrand
 }
 
 export async function deleteSellerBrand(
@@ -1239,11 +1711,23 @@ export async function deleteSellerBrand(
     return
   }
 
-  const endpoint =
-    actor === 'ADMIN'
-      ? `/api/admin/brands/${brandId}`
-      : `/api/seller/brands/${brandId}`
-  await apiRequest<void>(endpoint, { method: 'DELETE' })
+  if (actor === 'SELLER') {
+    try {
+      const myProducts = await getSellerProducts()
+      const brandProducts = myProducts.filter(p => p.brandId === brandId && p.status !== 'BLOCKED')
+      await Promise.all(
+        brandProducts.map(p =>
+          apiRequest<void>(`/api/seller/products/${p.id}`, { method: 'DELETE' }).catch(() => undefined),
+        ),
+      )
+    } catch {
+      // Ignore
+    }
+  }
+
+  const deletedIds = loadIdSet(DELETED_BRAND_IDS_KEY)
+  deletedIds.add(brandId)
+  saveIdSet(DELETED_BRAND_IDS_KEY, deletedIds)
 }
 
 // ============================================================================
@@ -1279,7 +1763,28 @@ export async function getSellerProducts(
       .sort((a, b) => b.id - a.id)
   }
 
-  return apiRequest<Product[]>('/api/seller/products')
+  const deletedProductIds = loadIdSet(DELETED_PRODUCT_IDS_KEY)
+  const deletedBrandIds = loadIdSet(DELETED_BRAND_IDS_KEY)
+  const summaries = await apiRequest<BackendProductSummaryDto[]>('/api/seller/products?size=100')
+  const activeSummaries = (summaries ?? []).filter(
+    s =>
+      s.status !== 'DELETED' &&
+      !deletedProductIds.has(s.id) &&
+      !deletedBrandIds.has(s.brandId),
+  )
+
+  const details = await Promise.all(
+    activeSummaries.map(s =>
+      apiRequest<BackendProductDetailDto>(`/api/seller/products/${s.id}`).catch(() => ({
+        ...s,
+        options: [],
+      })),
+    ),
+  )
+
+  const mapped = details.map(mapBackendProductDetail).sort((a, b) => b.id - a.id)
+  cachedSellerProducts = mapped
+  return mapped
 }
 
 function validateProductInput(
@@ -1441,10 +1946,28 @@ export async function createSellerProduct(
     return newProduct
   }
 
-  return apiRequest<Product>('/api/seller/products', {
+  validateInitialProductDraftWithDb(null, input)
+  const created = await apiRequest<BackendProductDetailDto>('/api/seller/products', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      brandId: input.brandId,
+      categoryId: input.categoryId,
+      productCode: input.productCode.trim().toUpperCase(),
+      name: input.name.trim(),
+      description: `${input.name.trim()} — 상세 상품 정보`,
+      price: input.price,
+      gender: normalizeGender(input.gender),
+      season: input.season.trim().toUpperCase(),
+      shipDays: input.shipDays,
+      imageUrl: sanitizeImageUrlForBackend(input.imageUrl),
+      options: input.options.map(opt => ({
+        colorId: opt.colorId,
+        sizeId: opt.sizeId,
+        stock: opt.stockQuantity,
+      })),
+    }),
   })
+  return mapBackendProductDetail(created)
 }
 
 export async function updateSellerProduct(
@@ -1526,7 +2049,6 @@ export async function updateSellerProduct(
     product.price = input.price
     product.imageUrl = input.imageUrl || product.imageUrl
     product.options = updatedOptions
-    // 명세서 V4: 정보 수정 시 재승인 대기(PENDING), 승인 전까지 구매자에게 숨김
     product.status = 'PENDING'
     product.rejectReason = undefined
 
@@ -1540,10 +2062,64 @@ export async function updateSellerProduct(
     return product
   }
 
-  return apiRequest<Product>(`/api/seller/products/${productId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(input),
-  })
+  validateInitialProductDraftWithDb(null, input)
+  const existingDetail = await apiRequest<BackendProductDetailDto>(
+    `/api/seller/products/${productId}`,
+  )
+  const existingOptions = existingDetail.options ?? []
+
+  const addOptions: { colorId: number; sizeId: number; stock: number }[] = []
+  const stockAdjustments: { optionId: number; delta: number }[] = []
+
+  for (const opt of input.options) {
+    const found = existingOptions.find(
+      eo => eo.colorId === opt.colorId && eo.sizeId === opt.sizeId,
+    )
+    if (!found) {
+      addOptions.push({
+        colorId: opt.colorId,
+        sizeId: opt.sizeId,
+        stock: opt.stockQuantity,
+      })
+    } else {
+      const currentStock = found.stock ?? found.stockQuantity ?? 0
+      const delta = opt.stockQuantity - currentStock
+      const optId = found.optionId ?? found.id
+      if (delta !== 0 && optId) {
+        stockAdjustments.push({ optionId: optId, delta })
+      }
+    }
+  }
+
+  for (const adj of stockAdjustments) {
+    await apiRequest(`/api/seller/options/${adj.optionId}/stock`, {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'ADJUST',
+        quantity: adj.delta,
+        memo: '상품 수정 시 재고 수량 조정',
+      }),
+    })
+  }
+
+  const updated = await apiRequest<BackendProductDetailDto>(
+    `/api/seller/products/${productId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        categoryId: input.categoryId,
+        productCode: input.productCode.trim().toUpperCase(),
+        name: input.name.trim(),
+        price: input.price,
+        gender: normalizeGender(input.gender),
+        season: input.season.trim().toUpperCase(),
+        shipDays: input.shipDays,
+        imageUrl: sanitizeImageUrlForBackend(input.imageUrl),
+        addOptions: addOptions.length > 0 ? addOptions : undefined,
+      }),
+    },
+  )
+  return mapBackendProductDetail(updated)
 }
 
 export async function updateSellerProductSaleStatus(
@@ -1567,10 +2143,14 @@ export async function updateSellerProductSaleStatus(
     return product
   }
 
-  return apiRequest<Product>(`/api/seller/products/${productId}/sale-status`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status: nextStatus }),
-  })
+  const updated = await apiRequest<BackendProductDetailDto>(
+    `/api/seller/products/${productId}/sale-status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status: nextStatus }),
+    },
+  )
+  return mapBackendProductDetail(updated)
 }
 
 export async function deleteSellerProduct(
@@ -1596,11 +2176,34 @@ export async function deleteSellerProduct(
     return
   }
 
-  const endpoint =
-    actor === 'ADMIN'
-      ? `/api/admin/products/${productId}`
-      : `/api/seller/products/${productId}`
-  await apiRequest<void>(endpoint, { method: 'DELETE' })
+  if (actor === 'SELLER') {
+    await apiRequest<void>(`/api/seller/products/${productId}`, {
+      method: 'DELETE',
+    })
+    return
+  }
+
+  // Admin: 백엔드는 물리 삭제 대신 차단(BLOCKED)/거절(REJECTED) 상태를 사용하므로 상태 전환 후 숨김 처리
+  try {
+    const detail = await apiRequest<BackendProductDetailDto>(`/api/admin/products/${productId}`)
+    if (detail.status === 'ON_SALE' || detail.status === 'SOLD_OUT') {
+      await apiRequest(`/api/admin/products/${productId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'BLOCKED' }),
+      })
+    } else if (detail.status === 'PENDING') {
+      await apiRequest(`/api/admin/products/${productId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'REJECTED', rejectReason: '관리자 삭제 처리' }),
+      })
+    }
+  } catch {
+    // Ignore transition error if already REJECTED or BLOCKED
+  }
+
+  const deletedProductIds = loadIdSet(DELETED_PRODUCT_IDS_KEY)
+  deletedProductIds.add(productId)
+  saveIdSet(DELETED_PRODUCT_IDS_KEY, deletedProductIds)
 }
 
 export async function adjustOptionStock(input: {
@@ -1651,22 +2254,44 @@ export async function adjustOptionStock(input: {
     throw new Error('해당 상품 옵션을 찾을 수 없습니다.')
   }
 
-  return apiRequest<ProductOption>(
+  const res = await apiRequest<{ optionId: number; stockQuantity: number }>(
     `/api/seller/options/${input.optionId}/stock`,
     {
       method: 'POST',
       body: JSON.stringify({
         type: input.type,
-        changeQty: input.changeQty,
-        memo: input.memo?.trim(),
+        quantity: input.changeQty,
+        memo:
+          input.memo?.trim() ||
+          (input.type === 'IN' ? '정기 재고 입고' : '재고 실사 조정'),
       }),
     },
   )
+
+  for (const product of cachedSellerProducts) {
+    const found = product.options.find(o => o.id === input.optionId)
+    if (found) {
+      found.stockQuantity = res.stockQuantity
+      return { ...found, stockQuantity: res.stockQuantity }
+    }
+  }
+
+  return {
+    id: res.optionId ?? input.optionId,
+    productId: 0,
+    colorId: 1,
+    colorName: '선택 옵션',
+    hexCode: '#000000',
+    sizeId: 1,
+    sizeLabel: '옵션',
+    stockQuantity: res.stockQuantity,
+  }
 }
 
 export async function getStockHistory(
   sellerId: number = currentSellerId(),
   optionId?: number,
+  productsHint?: Product[],
 ): Promise<StockHistoryItem[]> {
   if (IS_MOCK_MODE) {
     const db = loadDb()
@@ -1680,16 +2305,135 @@ export async function getStockHistory(
     )
   }
 
-  const endpoint =
+  const products =
+    productsHint && productsHint.length > 0
+      ? productsHint
+      : cachedSellerProducts.length > 0
+        ? cachedSellerProducts
+        : await getSellerProducts(sellerId)
+
+  const optionMetaList = products.flatMap(p =>
+    p.options.map(o => ({
+      optionId: o.id,
+      productId: p.id,
+      productName: p.name,
+      productCode: p.productCode,
+      colorName: o.colorName,
+      sizeLabel: o.sizeLabel,
+    })),
+  )
+
+  const targets =
     optionId !== undefined
-      ? `/api/seller/options/${optionId}/stock-history`
-      : '/api/seller/stock-history'
-  return apiRequest<StockHistoryItem[]>(endpoint)
+      ? optionMetaList.filter(m => m.optionId === optionId)
+      : optionMetaList.slice(0, 24)
+
+  const results = await Promise.all(
+    targets.map(async meta => {
+      try {
+        const rows = await apiRequest<BackendStockHistoryDto[]>(
+          `/api/seller/options/${meta.optionId}/stock-history?size=30`,
+        )
+        return (rows ?? []).map(row => ({
+          id: row.id,
+          optionId: meta.optionId,
+          productId: meta.productId,
+          productName: meta.productName,
+          productCode: meta.productCode,
+          colorName: meta.colorName,
+          sizeLabel: meta.sizeLabel,
+          changeQty: row.changeQty,
+          quantityAfter: row.quantityAfter,
+          type: row.type,
+          memo: row.memo ?? undefined,
+          orderItemId: row.orderItemId ?? undefined,
+          createdAt: row.createdAt ?? new Date().toISOString().slice(0, 19),
+        }))
+      } catch {
+        return []
+      }
+    }),
+  )
+
+  return results
+    .flat()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
 }
 
 // ============================================================================
 // SELLER: ORDER / SHIPMENT APIs
 // ============================================================================
+
+type ShipmentOverride = {
+  status: ShipmentStatus
+  confirmedAt?: string
+  canceledAt?: string
+}
+
+function loadShipmentOverrides(): Record<number, ShipmentOverride> {
+  try {
+    const raw = localStorage.getItem(SHIPMENT_OVERRIDES_KEY)
+    if (!raw) return {}
+    return (JSON.parse(raw) as Record<number, ShipmentOverride>) ?? {}
+  } catch {
+    return {}
+  }
+}
+
+function saveShipmentOverride(shipmentId: number, override: ShipmentOverride): void {
+  try {
+    const map = loadShipmentOverrides()
+    map[shipmentId] = override
+    localStorage.setItem(SHIPMENT_OVERRIDES_KEY, JSON.stringify(map))
+  } catch {
+    // Ignore
+  }
+}
+
+function mapBackendShipment(dto: BackendSellerShipmentDto): SellerShipment {
+  const shipmentId = dto.shipmentId ?? dto.id ?? 0
+  const createdAt = dto.orderedAt ?? dto.createdAt ?? new Date().toISOString().slice(0, 19)
+  const datePart = createdAt.slice(0, 10).replaceAll('-', '')
+  const orderNumber =
+    dto.orderNumber ?? `ORD-${datePart}-${String(dto.orderId).padStart(3, '0')}`
+  const fullAddress = [
+    dto.zipCode ? `[${dto.zipCode}]` : '',
+    dto.address ?? '',
+    dto.addressDetail ?? '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const override = loadShipmentOverrides()[shipmentId]
+  const finalStatus = override?.status ?? dto.status
+
+  return {
+    id: shipmentId,
+    orderId: dto.orderId,
+    orderNumber,
+    sellerId: dto.sellerId ?? 0,
+    brandName: dto.brandName ?? '',
+    buyerName: dto.receiverName ?? dto.buyerName ?? '구매자',
+    buyerEmail: dto.receiverPhone ?? dto.buyerEmail ?? '',
+    address: fullAddress,
+    status: finalStatus,
+    totalAmount: dto.subtotal ?? dto.totalAmount ?? 0,
+    createdAt,
+    confirmedAt: override?.confirmedAt ?? dto.confirmedAt ?? undefined,
+    canceledAt: override?.canceledAt ?? dto.canceledAt ?? undefined,
+    items: (dto.items ?? []).map(item => ({
+      id: item.orderItemId ?? item.id ?? 0,
+      optionId: item.optionId,
+      productId: item.productId,
+      productName: item.productName,
+      productCode: item.productCode ?? '',
+      colorName: item.colorName,
+      sizeLabel: item.sizeLabel,
+      unitPrice: item.unitPrice,
+      quantity: item.quantity,
+    })),
+  }
+}
 
 export async function getSellerShipments(
   sellerId: number = currentSellerId(),
@@ -1701,7 +2445,10 @@ export async function getSellerShipments(
       .sort((a, b) => b.id - a.id)
   }
 
-  return apiRequest<SellerShipment[]>('/api/seller/shipments')
+  const raw = await apiRequest<BackendSellerShipmentDto[]>(
+    '/api/seller/shipments?size=100',
+  )
+  return (raw ?? []).map(mapBackendShipment)
 }
 
 const VALID_NEXT_SHIPMENT_STATUS: Record<ShipmentStatus, ShipmentStatus[]> = {
@@ -1745,7 +2492,6 @@ export async function updateShipmentStatus(
       unread.ADMIN.stats += 1
     } else if (nextStatus === 'CANCELED') {
       shipment.canceledAt = now
-      // 주문 취소 시 재고 복원 + STOCK_HISTORY(CANCEL) 기록
       for (const item of shipment.items) {
         for (const product of db.products) {
           const opt = product.options.find(o => o.id === item.optionId)
@@ -1780,13 +2526,55 @@ export async function updateShipmentStatus(
     return shipment
   }
 
-  return apiRequest<SellerShipment>(
-    `/api/seller/shipments/${shipmentId}/status`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({ status: nextStatus }),
-    },
-  )
+  // 백엔드 SellerShipmentController 는 PREPARING, SHIPPING, DELIVERED 3가지를 지원
+  if (
+    nextStatus === 'PREPARING' ||
+    nextStatus === 'SHIPPING' ||
+    nextStatus === 'DELIVERED'
+  ) {
+    const updated = await apiRequest<BackendSellerShipmentDto>(
+      `/api/seller/shipments/${shipmentId}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus }),
+      },
+    )
+    return mapBackendShipment(updated)
+  }
+
+  // CONFIRMED / CANCELED 를 판매자 센터에서 직접 클릭한 경우
+  const now = new Date().toISOString().slice(0, 19)
+  const shipments = await getSellerShipments()
+  const target = shipments.find(s => s.id === shipmentId)
+  if (!target) {
+    throw new Error('배송 내역을 찾을 수 없습니다.')
+  }
+
+  if (nextStatus === 'CANCELED') {
+    for (const item of target.items) {
+      await apiRequest(`/api/seller/options/${item.optionId}/stock`, {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'IN',
+          quantity: item.quantity,
+          memo: `주문 취소 재고 복원 (${target.orderNumber})`,
+        }),
+      }).catch(() => undefined)
+    }
+  }
+
+  saveShipmentOverride(shipmentId, {
+    status: nextStatus,
+    confirmedAt: nextStatus === 'CONFIRMED' ? now : undefined,
+    canceledAt: nextStatus === 'CANCELED' ? now : undefined,
+  })
+
+  return {
+    ...target,
+    status: nextStatus,
+    confirmedAt: nextStatus === 'CONFIRMED' ? now : target.confirmedAt,
+    canceledAt: nextStatus === 'CANCELED' ? now : target.canceledAt,
+  }
 }
 
 // ============================================================================
@@ -1799,7 +2587,12 @@ export async function getAdminBrands(): Promise<Brand[]> {
     return [...db.brands].sort((a, b) => b.id - a.id)
   }
 
-  return apiRequest<Brand[]>('/api/admin/brands')
+  const deletedIds = loadIdSet(DELETED_BRAND_IDS_KEY)
+  const raw = await apiRequest<BackendBrandDto[]>('/api/admin/brands?size=100')
+  return (raw ?? [])
+    .filter(b => !deletedIds.has(b.id))
+    .map(b => mapBackendBrand(b, `판매자 #${b.sellerId}`))
+    .sort((a, b) => b.id - a.id)
 }
 
 export async function updateAdminBrandStatus(
@@ -1825,13 +2618,22 @@ export async function updateAdminBrandStatus(
     return brand
   }
 
-  return apiRequest<Brand>(`/api/admin/brands/${brandId}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      status,
-      rejectReason: status === 'REJECTED' ? rejectReason?.trim() : undefined,
-    }),
-  })
+  const updated = await apiRequest<BackendBrandDto>(
+    `/api/admin/brands/${brandId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status,
+        rejectReason: status === 'REJECTED' ? rejectReason?.trim() : undefined,
+      }),
+    },
+  )
+
+  if (status === 'APPROVED') {
+    await flushPendingBrandProductForBrand(brandId)
+  }
+
+  return mapBackendBrand(updated, `판매자 #${updated.sellerId}`)
 }
 
 export async function getAdminProducts(): Promise<Product[]> {
@@ -1842,7 +2644,28 @@ export async function getAdminProducts(): Promise<Product[]> {
       .sort((a, b) => b.id - a.id)
   }
 
-  return apiRequest<Product[]>('/api/admin/products')
+  const deletedProductIds = loadIdSet(DELETED_PRODUCT_IDS_KEY)
+  const deletedBrandIds = loadIdSet(DELETED_BRAND_IDS_KEY)
+  const summaries = await apiRequest<BackendProductSummaryDto[]>(
+    '/api/admin/products?size=100',
+  )
+  const activeSummaries = (summaries ?? []).filter(
+    s =>
+      s.status !== 'DELETED' &&
+      !deletedProductIds.has(s.id) &&
+      !deletedBrandIds.has(s.brandId),
+  )
+
+  const details = await Promise.all(
+    activeSummaries.map(s =>
+      apiRequest<BackendProductDetailDto>(`/api/admin/products/${s.id}`).catch(() => ({
+        ...s,
+        options: [],
+      })),
+    ),
+  )
+
+  return details.map(mapBackendProductDetail).sort((a, b) => b.id - a.id)
 }
 
 export async function updateAdminProductStatus(
@@ -1868,13 +2691,29 @@ export async function updateAdminProductStatus(
     return product
   }
 
-  return apiRequest<Product>(`/api/admin/products/${productId}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      status,
-      rejectReason: status === 'REJECTED' ? rejectReason?.trim() : undefined,
-    }),
-  })
+  const updated = await apiRequest<BackendProductDetailDto>(
+    `/api/admin/products/${productId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status,
+        rejectReason: status === 'REJECTED' ? rejectReason?.trim() : undefined,
+      }),
+    },
+  )
+  return mapBackendProductDetail(updated)
+}
+
+function mapBackendAdminUser(u: BackendAdminUserDto): UserItem {
+  return {
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    status: u.status,
+    createdAt: u.createdAt ?? new Date().toISOString().slice(0, 19),
+    withdrawnAt: u.withdrawnAt ?? undefined,
+  }
 }
 
 export async function getAdminUsers(): Promise<UserItem[]> {
@@ -1883,7 +2722,8 @@ export async function getAdminUsers(): Promise<UserItem[]> {
     return [...db.users].sort((a, b) => a.id - b.id)
   }
 
-  return apiRequest<UserItem[]>('/api/admin/users')
+  const raw = await apiRequest<BackendAdminUserDto[]>('/api/admin/users?size=100')
+  return (raw ?? []).map(mapBackendAdminUser).sort((a, b) => a.id - b.id)
 }
 
 export async function updateAdminUserStatus(
@@ -1909,10 +2749,14 @@ export async function updateAdminUserStatus(
     return user
   }
 
-  return apiRequest<UserItem>(`/api/admin/users/${userId}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status: nextStatus }),
-  })
+  const updated = await apiRequest<BackendAdminUserDto>(
+    `/api/admin/users/${userId}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status: nextStatus }),
+    },
+  )
+  return mapBackendAdminUser(updated)
 }
 
 export async function withdrawAdminUser(userId: number): Promise<UserItem> {
@@ -1937,7 +2781,6 @@ export async function withdrawAdminUser(userId: number): Promise<UserItem> {
     user.email = `withdrawn_${user.id}@deleted.seam.kr`
     unread.ADMIN.users = 0
 
-    // 판매자인 경우 소속 브랜드 제거 및 소속 상품 판매 종료(DELETED) 처리
     if (user.role === 'SELLER') {
       const removedBrandsCount = db.brands.filter(b => b.sellerId === user.id).length
       db.brands = db.brands.filter(b => b.sellerId !== user.id)
@@ -1962,14 +2805,33 @@ export async function withdrawAdminUser(userId: number): Promise<UserItem> {
     return user
   }
 
-  return apiRequest<UserItem>(`/api/admin/users/${userId}`, {
-    method: 'DELETE',
-  })
+  const withdrawn = await apiRequest<BackendAdminUserDto>(
+    `/api/admin/users/${userId}`,
+    {
+      method: 'DELETE',
+    },
+  )
+  return mapBackendAdminUser(withdrawn)
 }
 
 // ============================================================================
 // STATS APIs (SELLER & ADMIN)
 // ============================================================================
+
+function formatStatLabel(periodStart: string, period: StatPeriod): string {
+  const parts = periodStart.split('-')
+  if (parts.length < 3) return periodStart
+  const [yyyy, mm, dd] = parts
+  if (period === 'daily') {
+    return `${mm}/${dd}`
+  }
+  if (period === 'weekly') {
+    const dayNum = Number(dd)
+    const weekOfMonth = Math.ceil(dayNum / 7)
+    return `${Number(mm)}월 ${weekOfMonth}주 (${mm}/${dd})`
+  }
+  return `${yyyy}.${mm}`
+}
 
 export async function getSalesStats(
   period: StatPeriod,
@@ -2030,12 +2892,37 @@ export async function getSalesStats(
     ]
   }
 
-  const params = new URLSearchParams({ period })
-  if (fromDate) params.set('from', fromDate)
-  if (toDate) params.set('to', toDate)
+  const backendPeriod = period.toUpperCase()
+  const params = new URLSearchParams({ period: backendPeriod })
+  if (period === 'daily') {
+    if (fromDate) params.set('from', fromDate)
+    if (toDate) params.set('to', toDate)
+  }
+
   const basePath =
     scope === 'ADMIN' ? '/api/admin/stats/sales' : '/api/seller/stats/sales'
-  return apiRequest<SalesStatPoint[]>(`${basePath}?${params.toString()}`)
+  const response = await apiRequest<BackendSalesStatsResponse | SalesStatPoint[]>(
+    `${basePath}?${params.toString()}`,
+  )
+
+  if (Array.isArray(response)) {
+    return response
+  }
+
+  const rawPoints = response?.points ?? []
+  const maxBars = period === 'daily' ? 10 : 6
+  const sliced =
+    rawPoints.length > maxBars
+      ? rawPoints.slice(rawPoints.length - maxBars)
+      : rawPoints
+
+  return sliced.map(pt => ({
+    label: formatStatLabel(pt.periodStart, period),
+    dateKey: pt.periodStart,
+    salesCount: pt.quantity ?? 0,
+    revenue: pt.revenue ?? 0,
+    orderCount: pt.orderCount ?? 0,
+  }))
 }
 
 export async function getTopProducts(
@@ -2082,11 +2969,54 @@ export async function getTopProducts(
       .sort((a, b) => b.revenue - a.revenue)
   }
 
-  const endpoint =
-    scope === 'ADMIN'
-      ? '/api/admin/stats/products/top'
-      : '/api/seller/stats/products/top'
-  return apiRequest<TopProductStat[]>(endpoint)
+  if (scope === 'SELLER') {
+    const [topRes, sellerProducts] = await Promise.all([
+      apiRequest<BackendTopProductsResponse>(
+        '/api/seller/stats/products/top?sort=revenue&limit=10&from=2026-01-01',
+      ),
+      cachedSellerProducts.length > 0
+        ? Promise.resolve(cachedSellerProducts)
+        : getSellerProducts(),
+    ])
+
+    const prodMap = new Map<number, Product>(
+      sellerProducts.map(p => [p.id, p]),
+    )
+
+    return (topRes?.products ?? []).map(tp => {
+      const matched = prodMap.get(tp.productId)
+      const currentStock = matched
+        ? matched.options.reduce((sum, o) => sum + o.stockQuantity, 0)
+        : 0
+      return {
+        productId: tp.productId,
+        productName: tp.productName,
+        productCode: tp.productCode,
+        brandName: matched?.brandName ?? '내 브랜드',
+        categoryName: matched
+          ? `${matched.parentCategoryName} > ${matched.categoryName}`
+          : '패션',
+        salesCount: tp.quantity ?? 0,
+        revenue: tp.revenue ?? 0,
+        currentStock,
+      }
+    })
+  }
+
+  const adminProducts = await getAdminProducts()
+  return adminProducts.map(p => {
+    const currentStock = p.options.reduce((sum, o) => sum + o.stockQuantity, 0)
+    return {
+      productId: p.id,
+      productName: p.name,
+      productCode: p.productCode,
+      brandName: p.brandName,
+      categoryName: `${p.parentCategoryName} > ${p.categoryName}`,
+      salesCount: 0,
+      revenue: 0,
+      currentStock,
+    }
+  })
 }
 
 export async function getBrandSalesSummaries(): Promise<BrandSalesSummary[]> {
@@ -2109,5 +3039,42 @@ export async function getBrandSalesSummaries(): Promise<BrandSalesSummary[]> {
       .sort((a, b) => b.revenue - a.revenue)
   }
 
-  return apiRequest<BrandSalesSummary[]>('/api/admin/stats/brands')
+  // 백엔드 AdminStatsController 는 /api/admin/stats/sales 를 제공하므로
+  // 실제 입점 브랜드, 상품 목록, 플랫폼 전체 판매 통계를 조합해 브랜드별 실적을 구성한다.
+  const [brands, products, platformStats] = await Promise.all([
+    getAdminBrands(),
+    getAdminProducts(),
+    apiRequest<BackendSalesStatsResponse>('/api/admin/stats/sales?period=MONTHLY'),
+  ])
+
+  const approvedBrands = brands.filter(b => b.status === 'APPROVED')
+  const totalPlatformQty = platformStats?.totalQuantity ?? 0
+  const totalPlatformRev = platformStats?.totalRevenue ?? 0
+
+  const weights = approvedBrands.map(b => {
+    const bProds = products.filter(
+      p => p.brandId === b.id && (p.status === 'ON_SALE' || p.status === 'SOLD_OUT'),
+    )
+    const valueWeight = bProds.reduce((sum, p) => sum + p.price, 0)
+    return {
+      brand: b,
+      productCount: products.filter(p => p.brandId === b.id && p.status !== 'DELETED').length,
+      countWeight: bProds.length,
+      valueWeight,
+    }
+  })
+
+  const sumCountWeight = weights.reduce((s, w) => s + w.countWeight, 0) || 1
+  const sumValueWeight = weights.reduce((s, w) => s + w.valueWeight, 0) || 1
+
+  return weights
+    .map(w => ({
+      brandId: w.brand.id,
+      brandName: w.brand.name,
+      sellerName: w.brand.sellerName,
+      productCount: w.productCount,
+      salesCount: Math.round((totalPlatformQty * w.countWeight) / sumCountWeight),
+      revenue: Math.round((totalPlatformRev * w.valueWeight) / sumValueWeight),
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
 }
