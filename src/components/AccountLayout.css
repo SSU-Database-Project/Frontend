@@ -1,0 +1,68 @@
+.site-shell {
+  width: min(100% - clamp(48px, 8vw, 144px), 1320px);
+  margin-inline: auto;
+}
+.site-header {
+  height: clamp(72px, 9vh, 94px);
+  border-bottom: 1px solid #333831;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.wordmark {
+  display: inline-flex;
+  align-items: flex-start;
+  font: 950 italic 36px/.9 "Arial Black", Arial, sans-serif;
+  letter-spacing: -.09em;
+}
+.brand-stitch { width: 10px; height: 10px; margin: 1px 0 0 7px; background: var(--blue); transform: skew(-12deg); }
+.member-label, .item-color { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.member-label .icon { width: 15px; height: 15px; }
+
+.account-layout {
+  display: grid;
+  grid-template-columns: 1.03fr 1fr;
+  align-items: center;
+  gap: clamp(36px, 6vw, 120px);
+  padding: clamp(24px, 4vh, 48px) 0;
+  min-height: calc(100svh - clamp(72px, 9vh, 94px));
+}
+.editorial { min-width: 0; }
+.photo-frame {
+  height: clamp(470px, calc(100svh - 215px), 740px);
+  overflow: hidden;
+  background: #d4c5ae;
+}
+.photo-frame img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: 50% 54%; }
+.editorial figcaption {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+.item-name { font-size: 13px; font-weight: 700; letter-spacing: -.03em; }
+.item-color i { width: 9px; height: 9px; background: #1e3b9e; }
+
+.account-panel { display: grid; place-items: center; min-width: 0; }
+.panel-inner { width: min(100%, 386px); }
+.account-panel h1 {
+  font-size: clamp(38px, 3.7vw, 54px);
+  letter-spacing: -.075em;
+  line-height: 1.22;
+  font-weight: 800;
+}
+.account-panel h1:focus { outline: none; }
+.intro { margin: 14px 0 35px; line-height: 1.7; color: var(--muted); font-size: 14px; letter-spacing: -.025em; word-break: keep-all; }
+
+@media (max-width: 760px) {
+  .site-shell { width: min(100% - 40px, 520px); }
+  .site-header { height: 64px; }
+  .wordmark { font-size: 31px; }
+  .account-layout { display: flex; flex-direction: column; align-items: stretch; gap: 44px; min-height: auto; padding: 40px 0 20px; }
+  .account-panel { order: -1; }
+  .panel-inner { width: 100%; }
+  .intro { margin: 10px 0 27px; }
+  .photo-frame { height: auto; aspect-ratio: 5 / 3; }
+  .photo-frame img { object-position: 50% 67%; }
+}
