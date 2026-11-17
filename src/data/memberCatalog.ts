@@ -43,8 +43,6 @@ export const products: Product[] = [
   { ...apparel, id: 1001, name: '캔버스 토트백', brand: 'SEAM', category: '잡화', price: 42000, image: tote, colors: ['코발트 블루', '아이보리'], sizes: ['FREE'], stock: 10, season: '사계절', registered: '2026-11-01' },
 ]
 
-export const formatPrice = (value: number) => value.toLocaleString('ko-KR') + '원'
-
 export const demoOrders = [
   { number: '20261108-002', date: '2026.11.08', productId: 1009, color: '스카이 블루', size: 'M', quantity: 1, unitPrice: 58000, status: '배송 중' },
   { number: '20261104-001', date: '2026.11.04', productId: 1001, color: '코발트 블루', size: 'FREE', quantity: 1, unitPrice: 42000, status: '배송 완료' },

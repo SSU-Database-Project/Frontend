@@ -1,36 +1,39 @@
-import ProductGrid from '../../components/member/ProductGrid'
-import { categories, products, type Category } from '../../data/memberCatalog'
+import { useCallback } from 'react'
+import ProductGrid, { type HeartControls } from '../../components/member/ProductGrid'
+import { LoadStatus, PageNav } from '../../components/member/ShopFeedback'
+import type { MemberApi } from '../../types/member'
+import { useMemberRequest } from './useMemberRequest'
 
-type Props = {
-  query: string
-  category: Category | '전체'
-  onCategory: (category: Category | '전체') => void
-  favorites: number[]
-  onFavorite: (id: number) => void
-}
+export type CatalogFilter = { query: string; category: number | null; page: number }
 
-export default function CatalogPage({ query, category, onCategory, favorites, onFavorite }: Props) {
-  const keyword = query.trim().toLocaleLowerCase()
-  const filtered = products.filter(p => (category === '전체' || p.category === category) &&
-    (p.name + ' ' + p.brand).toLocaleLowerCase().includes(keyword))
-    .sort((a, b) => b.registered.localeCompare(a.registered) || b.id - a.id)
-
+export default function CatalogPage({ api, filter, onFilter, hearts }: {
+  api: MemberApi; filter: CatalogFilter; onFilter: (filter: CatalogFilter) => void; hearts: HeartControls
+}) {
+  const { query, category, page } = filter
+  const categories = useMemberRequest(api.categories)
+  const load = useCallback(() => api.products(query, category, page), [api, query, category, page])
+  const products = useMemberRequest(load)
+  function choose(id: number | null) {
+    onFilter({ ...filter, category: id, page: 0 })
+  }
   return <>
-    <div className="shop-title"><h1>{keyword ? '검색 결과' : '상품 둘러보기'}</h1><span>총 {filtered.length}개 상품</span></div>
+    <div className="shop-title"><h1>{query ? '검색 결과' : '상품 둘러보기'}</h1>
+      {products.data && <span>총 {products.data.totalElements}개 상품</span>}</div>
     <div className="catalog-tools">
       <div className="category-tabs" role="group" aria-label="카테고리">
-        {(['전체', ...categories] as const).map(c => <button type="button" key={c} aria-pressed={c === category} onClick={() => onCategory(c)}>{c}</button>)}
-      </div>
-      <span className="sort-label">최근 등록순</span>
+        <button aria-pressed={category === null} onClick={() => choose(null)}>전체</button>
+        {categories.data?.map(c => <button key={c.id} aria-pressed={category === c.id} onClick={() => choose(c.id)}>{c.name}</button>)}
+      </div><span className="sort-label">최근 등록순</span>
     </div>
-    {!filtered.length && <p className="shop-empty">일치하는 상품이 없어요. 다른 검색어나 카테고리를 선택해 주세요.</p>}
-    {categories.map(c => {
-      const items = filtered.filter(p => p.category === c)
-      if (!items.length) return null
-      return <section className="catalog-section" key={c}>
-        <h2>{c} <span>{items.length}</span></h2>
-        <ProductGrid items={items} favorites={favorites} onFavorite={onFavorite} />
-      </section>
-    })}
+    {!categories.data && <LoadStatus error={categories.error} retry={categories.refresh} />}
+    {!products.data ? <LoadStatus error={products.error} retry={products.refresh} /> : <>
+      {!products.data.content.length && <p className="shop-empty">일치하는 상품이 없어요.</p>}
+      {categories.data ? categories.data.map(c => {
+        const ids = new Set([c.id, ...c.children.map(child => child.id)])
+        const items = products.data!.content.filter(p => ids.has(p.categoryId))
+        return items.length > 0 && <section className="catalog-section" key={c.id}><h2>{c.name}</h2><ProductGrid items={items} hearts={hearts} /></section>
+      }) : <ProductGrid items={products.data.content} hearts={hearts} />}
+      <PageNav result={products.data} onChange={page => onFilter({ ...filter, page })} />
+    </>}
   </>
 }
