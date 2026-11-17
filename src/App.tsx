@@ -4,6 +4,8 @@ import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import RoleSelectionPage from './pages/RoleSelectionPage'
 import RoleHomePage from './pages/RoleHomePage'
+import SellerWorkspace from './pages/seller/SellerWorkspace'
+import AdminWorkspace from './pages/admin/AdminWorkspace'
 import MemberShop from './pages/member/MemberShop'
 import type { Role } from './types/role'
 
@@ -24,6 +26,14 @@ export default function App() {
   }
 
   if (screen === 'USER') return <MemberShop onExit={leaveShop} />
+
+  if (screen === 'SELLER') {
+    return <SellerWorkspace onBack={openLogin} />
+  }
+
+  if (screen === 'ADMIN') {
+    return <AdminWorkspace onBack={openLogin} />
+  }
 
   let page
   switch (screen) {
