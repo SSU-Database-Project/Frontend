@@ -8,9 +8,9 @@ const nav = [
   { id: 'mypage', label: '마이페이지', icon: 'USER' },
 ] as const
 
-type Props = { active: string; onSearch: (query: string) => void; onHome: () => void }
+type Props = { active: string; name: string; onLogout: () => void; onSearch: (query: string) => void; onHome: () => void }
 
-export default function ShopHeader({ active, onSearch, onHome }: Props) {
+export default function ShopHeader({ active, name, onLogout, onSearch, onHome }: Props) {
   const [value, setValue] = useState('')
   function home() {
     setValue('')
@@ -30,5 +30,11 @@ export default function ShopHeader({ active, onSearch, onHome }: Props) {
       <a key={item.id} className={'nav-' + item.id} href={'#' + item.id} aria-current={active === item.id ? 'page' : undefined} onClick={item.id === 'home' ? home : undefined}>
         <Icon name={item.icon} /><span>{item.label}</span>
       </a>)}</nav>
+    <div className="shop-session" aria-label="로그인한 계정">
+      <a className="shop-account-name" href="#mypage" title={name + '님 마이페이지'}>
+        <strong>{name}</strong><span>님</span>
+      </a>
+      <button className="shop-logout" type="button" onClick={onLogout}>로그아웃</button>
+    </div>
   </header>
 }
