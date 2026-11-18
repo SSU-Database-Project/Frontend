@@ -19,6 +19,17 @@ const ROLE_LABEL: Record<Role, string> = {
   USER: '일반회원',
 }
 
+function formatPhoneNumber(raw?: string | null): string {
+  if (!raw) return ''
+  const digits = raw.replace(/\D/g, '').slice(0, 11)
+  if (digits.length <= 3) return digits
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`
+  if (digits.length === 10 && !digits.startsWith('010')) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+  }
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`
+}
+
 type AdminUsersTabProps = {
   users: UserItem[]
   onRefresh: () => void
@@ -35,6 +46,10 @@ export default function AdminUsersTab({
   const [confirmWithdrawUser, setConfirmWithdrawUser] = useState<UserItem | null>(
     null,
   )
+  const [popupAlert, setPopupAlert] = useState<{
+    title: string
+    message: string
+  } | null>(null)
 
   const filtered = users.filter(u => {
     if (roleFilter !== 'ALL' && u.role !== roleFilter) return false
@@ -43,8 +58,8 @@ export default function AdminUsersTab({
   })
 
   async function handleToggleSuspend(user: UserItem) {
+    const next = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'
     try {
-      const next = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'
       await updateAdminUserStatus(user.id, next)
       await onRefresh()
       onNotify(
@@ -52,15 +67,21 @@ export default function AdminUsersTab({
         `회원 [${user.name}] 계정 상태가 ${next === 'ACTIVE' ? '정상' : '이용 정지'}(으)로 변경되었습니다.`,
       )
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : '회원 상태 변경에 실패했습니다.')
+      const msg =
+        err instanceof Error ? err.message : '회원 상태 변경에 실패했습니다.'
+      setPopupAlert({
+        title: next === 'SUSPENDED' ? '계정 정지 불가 안내' : '상태 변경 실패',
+        message: msg,
+      })
+      onNotify('error', msg)
     }
   }
 
   async function handleConfirmWithdraw() {
     if (!confirmWithdrawUser) return
+    const targetName = confirmWithdrawUser.name
+    const isSeller = confirmWithdrawUser.role === 'SELLER'
     try {
-      const targetName = confirmWithdrawUser.name
-      const isSeller = confirmWithdrawUser.role === 'SELLER'
       await withdrawAdminUser(confirmWithdrawUser.id)
       setConfirmWithdrawUser(null)
       await onRefresh()
@@ -71,7 +92,14 @@ export default function AdminUsersTab({
           : `회원 [${targetName}] 계정이 탈퇴 처리되어 개인정보가 삭제되었습니다 (주문 기록은 유지).`,
       )
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : '회원 삭제 처리에 실패했습니다.')
+      const msg =
+        err instanceof Error ? err.message : '회원 삭제 처리에 실패했습니다.'
+      setConfirmWithdrawUser(null)
+      setPopupAlert({
+        title: '회원 탈퇴 처리 불가 안내',
+        message: msg,
+      })
+      onNotify('error', msg)
     }
   }
 
@@ -168,6 +196,11 @@ export default function AdminUsersTab({
                     <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
                       {user.email}
                     </div>
+                    {user.phone && (
+                      <div style={{ fontSize: '11.5px', color: 'var(--muted)' }}>
+                        {formatPhoneNumber(user.phone)}
+                      </div>
+                    )}
                   </td>
                   <td>
                     <span className="ws-option-tag">
@@ -277,6 +310,47 @@ export default function AdminUsersTab({
                 onClick={handleConfirmWithdraw}
               >
                 유저 삭제(탈퇴) 확정
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {popupAlert && (
+        <div
+          className="ws-modal-backdrop"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="admin-user-alert-title"
+        >
+          <div className="ws-modal" style={{ maxWidth: '460px' }}>
+            <div className="ws-modal-header">
+              <h2 id="admin-user-alert-title">{popupAlert.title}</h2>
+              <button
+                type="button"
+                className="ws-banner-close"
+                onClick={() => setPopupAlert(null)}
+                aria-label="팝업 닫기"
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+            <div
+              className="ws-banner ws-banner-error"
+              style={{ marginBottom: '4px' }}
+            >
+              <div className="ws-banner-text">
+                <Icon name="alert" />
+                <span>{popupAlert.message}</span>
+              </div>
+            </div>
+            <div className="ws-modal-actions">
+              <button
+                type="button"
+                className="ws-btn ws-btn-primary"
+                onClick={() => setPopupAlert(null)}
+              >
+                확인
               </button>
             </div>
           </div>

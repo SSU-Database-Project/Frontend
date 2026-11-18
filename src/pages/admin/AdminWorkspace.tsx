@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import AccountSettingsSection from '../../components/AccountSettingsSection'
 import WorkspaceLayout, { type WorkspaceNavItem } from '../../components/WorkspaceLayout'
 import {
   clearAdminTabBadge,
@@ -14,9 +15,10 @@ import AdminProductsTab from './AdminProductsTab'
 import AdminStatsTab from './AdminStatsTab'
 import AdminUsersTab from './AdminUsersTab'
 
-export type AdminTab = 'brands' | 'products' | 'users' | 'stats'
+export type AdminTab = 'brands' | 'products' | 'users' | 'stats' | 'account'
 
 export default function AdminWorkspace({ accountLabel, onLogout }: { accountLabel: string; onLogout: () => void }) {
+  const [displayLabel, setDisplayLabel] = useState(accountLabel)
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
     clearAdminTabBadge('brands')
     return 'brands'
@@ -53,7 +55,9 @@ export default function AdminWorkspace({ accountLabel, onLogout }: { accountLabe
   }, [])
 
   useEffect(() => {
-    clearAdminTabBadge(activeTab)
+    if (activeTab !== 'account') {
+      clearAdminTabBadge(activeTab)
+    }
     let active = true
     void Promise.all([
       getAdminBrands(),
@@ -88,7 +92,9 @@ export default function AdminWorkspace({ accountLabel, onLogout }: { accountLabe
 
   function handleResetDemo() {
     resetMockStore()
-    clearAdminTabBadge(activeTab)
+    if (activeTab !== 'account') {
+      clearAdminTabBadge(activeTab)
+    }
     void refresh()
     notify('info', '시연 데이터가 초기 상태로 복원되었습니다.')
   }
@@ -122,23 +128,33 @@ export default function AdminWorkspace({ accountLabel, onLogout }: { accountLabe
       icon: 'chart',
       badgeCount: unread.stats,
     },
+    {
+      id: 'account',
+      label: '마이페이지 (내 계정)',
+      caption: '관리자 계정 정보 및 비밀번호 변경',
+      icon: 'ADMIN',
+    },
   ]
 
   return (
     <WorkspaceLayout
       role="ADMIN"
       roleTitle="관리자 콘솔"
-      accountLabel={accountLabel}
+      accountLabel={displayLabel}
       navItems={navItems}
       activeTab={activeTab}
       onTabChange={tab => {
-        clearAdminTabBadge(tab)
+        if (tab !== 'account') {
+          clearAdminTabBadge(tab)
+        }
         setActiveTab(tab)
         setBanner(null)
         void refresh()
       }}
       onAcknowledgeActiveTab={() => {
-        clearAdminTabBadge(activeTab)
+        if (activeTab !== 'account') {
+          clearAdminTabBadge(activeTab)
+        }
         void refresh()
       }}
       onLogout={onLogout}
@@ -176,6 +192,24 @@ export default function AdminWorkspace({ accountLabel, onLogout }: { accountLabe
           products={products}
           users={users}
         />
+      )}
+
+      {activeTab === 'account' && (
+        <>
+          <div className="ws-page-header">
+            <div>
+              <h1>마이페이지 (관리자 계정 정보)</h1>
+              <p>
+                관리자 계정 정보를 확인·수정하고 비밀번호를 변경합니다.
+              </p>
+            </div>
+          </div>
+          <AccountSettingsSection
+            onUserUpdated={updated => setDisplayLabel(updated.email)}
+            onLogout={onLogout}
+            onNotify={notify}
+          />
+        </>
       )}
     </WorkspaceLayout>
   )

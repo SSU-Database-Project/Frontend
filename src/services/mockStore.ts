@@ -1,4 +1,4 @@
-import { API_BASE_URL, apiRequest, AUTH_TOKEN_KEY, IS_MOCK_MODE } from './api'
+import { API_BASE_URL, ApiError, apiRequest, AUTH_TOKEN_KEY, IS_MOCK_MODE } from './api'
 import type { SignupInput } from '../types/auth'
 import blousonPhoto from '../assets/catalog/blouson.webp'
 import capPhoto from '../assets/catalog/cap.webp'
@@ -11,15 +11,18 @@ import stripePhoto from '../assets/catalog/stripe.webp'
 import trenchPhoto from '../assets/catalog/trench.webp'
 import totePhoto from '../assets/seam-tote.webp'
 import type {
+  AccountProfile,
   Brand,
   BrandSalesSummary,
   BrandStatus,
   Category,
   ColorOption,
   Gender,
+  PasswordChangeInput,
   Product,
   ProductOption,
   ProductStatus,
+  ProfileUpdateInput,
   SalesStatPoint,
   SellerShipment,
   ShipmentStatus,
@@ -31,6 +34,7 @@ import type {
   TopProductStat,
   UserItem,
   UserStatus,
+  WithdrawalCheckResult,
 } from '../types/commerce'
 import type { Role } from '../types/role'
 
@@ -994,6 +998,44 @@ async function mockPasswordHash(password: string, salt: string) {
   return Array.from(new Uint8Array(bits), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
+function countMockInProgressShipments(db: MockDatabase, user: UserItem): number {
+  const inProgressStatuses: ShipmentStatus[] = ['ORDERED', 'PREPARING', 'SHIPPING']
+  if (user.role === 'SELLER') {
+    return db.shipments.filter(
+      s => s.sellerId === user.id && inProgressStatuses.includes(s.status),
+    ).length
+  }
+  if (user.role === 'USER') {
+    return db.shipments.filter(
+      s =>
+        (s.buyerEmail.toLowerCase() === user.email.toLowerCase() ||
+          s.buyerName === user.name) &&
+        inProgressStatuses.includes(s.status),
+    ).length
+  }
+  return 0
+}
+
+function toMockAccountProfile(user: UserItem): AccountProfile {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    phone: user.phone ?? null,
+    role: user.role,
+    status: user.status,
+    createdAt: user.createdAt,
+    seller: user.sellerInfo
+      ? {
+          sellerId: user.id,
+          companyName: user.sellerInfo.companyName,
+          representativeName: user.sellerInfo.representativeName,
+          businessNumber: user.sellerInfo.businessNumber,
+        }
+      : null,
+  }
+}
+
 export async function loginMockUser(email: string, password: string) {
   const db = loadDb()
   const user = db.users.find(item => item.email.toLowerCase() === email.toLowerCase())
@@ -1009,6 +1051,195 @@ export async function loginMockUser(email: string, password: string) {
 export function getMockSessionUser() {
   const id = Number(sessionStorage.getItem(MOCK_SESSION_KEY))
   return loadDb().users.find(user => user.id === id && user.status === 'ACTIVE') ?? null
+}
+
+export async function getAccountProfile(): Promise<AccountProfile> {
+  if (IS_MOCK_MODE) {
+    const user = getMockSessionUser()
+    if (!user) throw new Error('계정 정보를 확인할 수 없습니다. 다시 로그인해 주세요.')
+    return toMockAccountProfile(user)
+  }
+  const user = await apiRequest<AccountProfile>('/api/users/me')
+  return {
+    ...user,
+    phone: user.phone ?? null,
+    status: user.status ?? 'ACTIVE',
+    seller: user.seller ?? null,
+  }
+}
+
+export async function updateAccountProfile(input: ProfileUpdateInput): Promise<AccountProfile> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const id = Number(sessionStorage.getItem(MOCK_SESSION_KEY))
+    const user = db.users.find(u => u.id === id && u.status === 'ACTIVE')
+    if (!user) throw new Error('로그인 정보를 확인할 수 없습니다.')
+    const trimmedName = input.name.trim()
+    if (!trimmedName) throw new Error('이름을 입력해 주세요.')
+    const trimmedPhone = input.phone?.trim() ?? ''
+    if (trimmedPhone && !/^01[0-9]-?\d{3,4}-?\d{4}$/.test(trimmedPhone)) {
+      throw new Error('휴대폰 번호 형식이 아닙니다.')
+    }
+    user.name = trimmedName
+    user.phone = trimmedPhone || undefined
+    if (user.role === 'SELLER') {
+      if (!input.seller?.companyName?.trim() || !input.seller?.representativeName?.trim()) {
+        throw new Error('판매자는 상호명과 대표자명을 모두 입력해야 합니다.')
+      }
+      user.sellerInfo = {
+        businessNumber: user.sellerInfo?.businessNumber ?? '0000000000',
+        companyName: input.seller.companyName.trim(),
+        representativeName: input.seller.representativeName.trim(),
+      }
+    }
+    saveDb(db)
+    return toMockAccountProfile(user)
+  }
+
+  const payload = input.seller
+    ? {
+        name: input.name.trim(),
+        phone: input.phone.trim(),
+        seller: {
+          companyName: input.seller.companyName.trim(),
+          representativeName: input.seller.representativeName.trim(),
+        },
+      }
+    : {
+        name: input.name.trim(),
+        phone: input.phone.trim(),
+      }
+  const updated = await apiRequest<AccountProfile>('/api/users/me', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+  return {
+    ...updated,
+    phone: updated.phone ?? null,
+    status: updated.status ?? 'ACTIVE',
+    seller: updated.seller ?? null,
+  }
+}
+
+export async function changeAccountPassword(input: PasswordChangeInput): Promise<void> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const id = Number(sessionStorage.getItem(MOCK_SESSION_KEY))
+    const user = db.users.find(u => u.id === id && u.status === 'ACTIVE')
+    if (!user) throw new Error('로그인 정보를 확인할 수 없습니다.')
+    const credential = db.credentials?.[user.id]
+    const matches = credential
+      ? (await mockPasswordHash(input.currentPassword, credential.salt)) === credential.hash
+      : input.currentPassword === 'demo1234!'
+    if (!matches) {
+      throw new ApiError('현재 비밀번호가 올바르지 않습니다.', 400, 'PASSWORD_MISMATCH')
+    }
+    if (input.newPassword.length < 8 || input.newPassword.length > 64) {
+      throw new Error('새 비밀번호는 8~64자로 입력해 주세요.')
+    }
+    const salt = crypto.randomUUID()
+    const hash = await mockPasswordHash(input.newPassword, salt)
+    db.credentials = { ...db.credentials, [user.id]: { salt, hash } }
+    saveDb(db)
+    sessionStorage.removeItem(MOCK_SESSION_KEY)
+    return
+  }
+
+  await apiRequest<void>('/api/users/me/password', {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function checkAccountWithdrawal(): Promise<WithdrawalCheckResult> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const id = Number(sessionStorage.getItem(MOCK_SESSION_KEY))
+    const user = db.users.find(u => u.id === id && u.status === 'ACTIVE')
+    if (!user) throw new Error('회원 정보를 확인할 수 없습니다.')
+    if (user.role === 'ADMIN') {
+      return {
+        canWithdraw: false,
+        inProgressOrderCount: 0,
+        message: '관리자 계정은 탈퇴할 수 없습니다.',
+      }
+    }
+    const count = countMockInProgressShipments(db, user)
+    if (user.role === 'SELLER') {
+      return count > 0
+        ? {
+            canWithdraw: false,
+            inProgressOrderCount: count,
+            message: `처리 중인 주문이 ${count}건 있어 탈퇴할 수 없습니다. 배송을 모두 처리한 뒤 탈퇴해 주세요.`,
+          }
+        : {
+            canWithdraw: true,
+            inProgressOrderCount: 0,
+            message: '탈퇴하면 등록한 상품이 모두 판매 종료됩니다. 정말 탈퇴하시겠습니까?',
+          }
+    }
+    return count > 0
+      ? {
+          canWithdraw: true,
+          inProgressOrderCount: count,
+          message: `진행 중인 주문이 ${count}건 존재합니다. 탈퇴해도 주문한 상품은 배송됩니다. 정말 탈퇴하시겠습니까?`,
+        }
+      : {
+          canWithdraw: true,
+          inProgressOrderCount: 0,
+          message: '정말 탈퇴하시겠습니까?',
+        }
+  }
+
+  return apiRequest<WithdrawalCheckResult>('/api/users/me/withdrawal')
+}
+
+export async function withdrawMySellerOrUserAccount(password: string): Promise<void> {
+  if (IS_MOCK_MODE) {
+    const db = loadDb()
+    const id = Number(sessionStorage.getItem(MOCK_SESSION_KEY))
+    const user = db.users.find(u => u.id === id && u.status === 'ACTIVE')
+    if (!user) throw new Error('회원 정보를 확인할 수 없습니다.')
+    if (user.role === 'ADMIN') {
+      throw new ApiError('관리자 계정은 탈퇴할 수 없습니다.', 403, 'CANNOT_MODIFY_ADMIN')
+    }
+    const credential = db.credentials?.[user.id]
+    const matches = credential
+      ? (await mockPasswordHash(password, credential.salt)) === credential.hash
+      : password === 'demo1234!'
+    if (!matches) {
+      throw new ApiError('비밀번호가 올바르지 않습니다.', 400, 'PASSWORD_MISMATCH')
+    }
+    if (user.role === 'SELLER') {
+      const count = countMockInProgressShipments(db, user)
+      if (count > 0) {
+        throw new ApiError(
+          `진행 중인 주문(주문완료·배송준비·배송중)이 ${count}건 있어 탈퇴할 수 없습니다.`,
+          409,
+          'HAS_IN_PROGRESS_ORDERS',
+        )
+      }
+      for (const product of db.products) {
+        if (product.sellerId === user.id && product.status !== 'DELETED') {
+          product.status = 'DELETED'
+        }
+      }
+    }
+    const now = new Date().toISOString().slice(0, 19)
+    user.status = 'WITHDRAWN'
+    user.withdrawnAt = now
+    user.name = `탈퇴회원#${user.id}`
+    user.email = `withdrawn_${user.id}@deleted.seam.kr`
+    user.phone = undefined
+    saveDb(db)
+    sessionStorage.removeItem(MOCK_SESSION_KEY)
+    return
+  }
+
+  await apiRequest<void>('/api/users/me/withdrawal', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  })
 }
 
 export async function signupMockUser(input: SignupInput) {
@@ -2709,6 +2940,7 @@ function mapBackendAdminUser(u: BackendAdminUserDto): UserItem {
     id: u.id,
     email: u.email,
     name: u.name,
+    phone: u.phone ?? undefined,
     role: u.role,
     status: u.status,
     createdAt: u.createdAt ?? new Date().toISOString().slice(0, 19),
@@ -2743,6 +2975,16 @@ export async function updateAdminUserStatus(
     if (user.status === 'WITHDRAWN') {
       throw new Error('이미 탈퇴 처리된 회원입니다.')
     }
+    if (nextStatus === 'SUSPENDED' && user.status !== 'SUSPENDED') {
+      const inProgressCount = countMockInProgressShipments(db, user)
+      if (inProgressCount > 0) {
+        throw new ApiError(
+          `진행 중인 주문(주문완료·배송준비·배송중)이 ${inProgressCount}건 있어 정지할 수 없습니다.`,
+          409,
+          'HAS_IN_PROGRESS_ORDERS',
+        )
+      }
+    }
     user.status = nextStatus
     unread.ADMIN.users = 0
     saveDb(db)
@@ -2773,12 +3015,21 @@ export async function withdrawAdminUser(userId: number): Promise<UserItem> {
     if (user.status === 'WITHDRAWN') {
       throw new Error('이미 탈퇴 처리된 회원입니다.')
     }
+    const inProgressCount = countMockInProgressShipments(db, user)
+    if (inProgressCount > 0) {
+      throw new ApiError(
+        `진행 중인 주문(주문완료·배송준비·배송중)이 ${inProgressCount}건 있어 탈퇴할 수 없습니다.`,
+        409,
+        'HAS_IN_PROGRESS_ORDERS',
+      )
+    }
 
     const now = new Date().toISOString().slice(0, 19)
     user.status = 'WITHDRAWN'
     user.withdrawnAt = now
     user.name = `탈퇴회원#${user.id}`
     user.email = `withdrawn_${user.id}@deleted.seam.kr`
+    user.phone = undefined
     unread.ADMIN.users = 0
 
     if (user.role === 'SELLER') {
