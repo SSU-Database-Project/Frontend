@@ -3,15 +3,48 @@ import type { Role } from './role'
 export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'WITHDRAWN'
 
 export type SellerBusinessInfo = {
+  sellerId?: number
   businessNumber: string
   companyName: string
   representativeName: string
+}
+
+export type AccountProfile = {
+  id: number
+  email: string
+  name: string
+  phone?: string | null
+  role: Role
+  status?: UserStatus
+  createdAt?: string
+  seller?: SellerBusinessInfo | null
+}
+
+export type ProfileUpdateInput = {
+  name: string
+  phone: string
+  seller?: {
+    companyName: string
+    representativeName: string
+  }
+}
+
+export type PasswordChangeInput = {
+  currentPassword: string
+  newPassword: string
+}
+
+export type WithdrawalCheckResult = {
+  canWithdraw: boolean
+  inProgressOrderCount: number
+  message: string
 }
 
 export type UserItem = {
   id: number
   email: string
   name: string
+  phone?: string
   role: Role
   status: UserStatus
   createdAt: string

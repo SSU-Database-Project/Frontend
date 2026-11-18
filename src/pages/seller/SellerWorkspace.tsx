@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import AccountSettingsSection from '../../components/AccountSettingsSection'
 import WorkspaceLayout, { type WorkspaceNavItem } from '../../components/WorkspaceLayout'
 import {
   clearSellerTabBadge,
@@ -21,9 +22,10 @@ import SellerOrdersTab from './SellerOrdersTab'
 import SellerProductsTab from './SellerProductsTab'
 import SellerStatsTab from './SellerStatsTab'
 
-export type SellerTab = 'brands' | 'products' | 'inventory' | 'orders' | 'stats'
+export type SellerTab = 'brands' | 'products' | 'inventory' | 'orders' | 'stats' | 'account'
 
 export default function SellerWorkspace({ accountLabel, onLogout }: { accountLabel: string; onLogout: () => void }) {
+  const [displayLabel, setDisplayLabel] = useState(accountLabel)
   const [activeTab, setActiveTab] = useState<SellerTab>(() => {
     clearSellerTabBadge('brands')
     return 'brands'
@@ -66,7 +68,9 @@ export default function SellerWorkspace({ accountLabel, onLogout }: { accountLab
   }, [])
 
   useEffect(() => {
-    clearSellerTabBadge(activeTab)
+    if (activeTab !== 'account') {
+      clearSellerTabBadge(activeTab)
+    }
     let active = true
     void Promise.all([
       getSellerBrands(),
@@ -104,7 +108,9 @@ export default function SellerWorkspace({ accountLabel, onLogout }: { accountLab
 
   function handleResetDemo() {
     resetMockStore()
-    clearSellerTabBadge(activeTab)
+    if (activeTab !== 'account') {
+      clearSellerTabBadge(activeTab)
+    }
     void refresh()
     notify('info', '시연 데이터가 초기 상태로 복원되었습니다.')
   }
@@ -145,17 +151,25 @@ export default function SellerWorkspace({ accountLabel, onLogout }: { accountLab
       icon: 'chart',
       badgeCount: unread.stats,
     },
+    {
+      id: 'account',
+      label: '마이페이지 (계정 관리)',
+      caption: '내 정보·상호 수정 및 회원 탈퇴',
+      icon: 'SELLER',
+    },
   ]
 
   return (
     <WorkspaceLayout
       role="SELLER"
       roleTitle="판매자 센터"
-      accountLabel={accountLabel}
+      accountLabel={displayLabel}
       navItems={navItems}
       activeTab={activeTab}
       onTabChange={tab => {
-        clearSellerTabBadge(tab)
+        if (tab !== 'account') {
+          clearSellerTabBadge(tab)
+        }
         setPreselectedBrandId(null)
         setPreselectedProductId(null)
         setActiveTab(tab)
@@ -163,7 +177,9 @@ export default function SellerWorkspace({ accountLabel, onLogout }: { accountLab
         void refresh()
       }}
       onAcknowledgeActiveTab={() => {
-        clearSellerTabBadge(activeTab)
+        if (activeTab !== 'account') {
+          clearSellerTabBadge(activeTab)
+        }
         void refresh()
       }}
       onLogout={onLogout}
@@ -225,6 +241,24 @@ export default function SellerWorkspace({ accountLabel, onLogout }: { accountLab
           products={products}
           shipments={shipments}
         />
+      )}
+
+      {activeTab === 'account' && (
+        <>
+          <div className="ws-page-header">
+            <div>
+              <h1>마이페이지 (판매자 계정 관리)</h1>
+              <p>
+                판매자 계정 정보(이름·전화번호·상호명·대표자명)를 확인·수정하고, 비밀번호 변경 및 회원 탈퇴를 수행합니다.
+              </p>
+            </div>
+          </div>
+          <AccountSettingsSection
+            onUserUpdated={updated => setDisplayLabel(updated.name)}
+            onLogout={onLogout}
+            onNotify={notify}
+          />
+        </>
       )}
     </WorkspaceLayout>
   )
