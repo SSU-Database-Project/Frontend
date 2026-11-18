@@ -6,6 +6,23 @@ export const IS_MOCK_MODE: boolean =
 export const API_BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
 
+export type SessionExpiredDetail = {
+  code?: string
+  message?: string
+}
+
+export class ApiError extends Error {
+  status: number
+  code?: string
+
+  constructor(message: string, status: number, code?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
 type ApiEnvelope<T> = {
   success?: boolean
   data?: T
@@ -46,6 +63,9 @@ export async function requestData<T>(
 
   if (response.status === 401 && token && token === localStorage.getItem(AUTH_TOKEN_KEY)) {
     localStorage.removeItem(AUTH_TOKEN_KEY)
+    if (payload?.error?.code === 'LOGGED_IN_ELSEWHERE') {
+      window.alert(payload.error.message || '다른 곳에서 로그인되어 로그아웃되었습니다.')
+    }
     window.dispatchEvent(new Event(SESSION_EXPIRED))
   }
 
@@ -53,7 +73,7 @@ export async function requestData<T>(
     const errorMessage =
       payload?.error?.message ??
       `백엔드 API 요청 실패 (${response.status} ${response.statusText})`
-    throw new Error(errorMessage)
+    throw new ApiError(errorMessage, response.status, payload?.error?.code)
   }
 
   if (payload && 'data' in payload && payload.data !== undefined) {

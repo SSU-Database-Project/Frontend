@@ -56,9 +56,15 @@ export default function App() {
     setScreen({ page: 'login' })
   }
 
+  function accountWithdrawn() {
+    logout()
+    clearRoute()
+    setScreen({ page: 'login', message: '회원 탈퇴가 완료되었습니다.' })
+  }
+
   if (screen.page === 'home') {
     const { user } = screen
-    if (user.role === 'USER') return <MemberShop key={user.id} userId={user.id} onExit={signOut} />
+    if (user.role === 'USER') return <MemberShop key={user.id} user={user} onExit={signOut} onWithdrawn={accountWithdrawn} />
     if (user.role === 'SELLER') return <SellerWorkspace accountLabel={user.name} onLogout={signOut} />
     return <AdminWorkspace accountLabel={user.email} onLogout={signOut} />
   }

@@ -5,6 +5,7 @@ import { LoadStatus } from '../../components/member/ShopFeedback'
 import { IS_MOCK_MODE } from '../../services/api'
 import { memberApi } from '../../services/member'
 import { createMockMemberApi } from '../../services/mockMember'
+import type { AuthUser } from '../../types/auth'
 import type { CartUpdate } from '../../types/member'
 import CartPage from './CartPage'
 import CatalogPage, { type CatalogFilter } from './CatalogPage'
@@ -17,7 +18,8 @@ const titles = { home: '상품 둘러보기', favorites: '좋아요', cart: '장
 type Tab = keyof typeof titles
 function currentRoute() { return window.location.hash.slice(1) || 'home' }
 
-export default function MemberShop({ userId, onExit }: { userId: number; onExit: () => void }) {
+export default function MemberShop({ user, onExit, onWithdrawn }: { user: AuthUser; onExit: () => void; onWithdrawn: () => void }) {
+  const userId = user.id
   const api = useMemo(() => IS_MOCK_MODE ? createMockMemberApi(userId) : memberApi, [userId])
   const [route, setRoute] = useState(currentRoute)
   const [filter, setFilter] = useState<CatalogFilter>({ query: '', category: null, page: 0 })
@@ -99,12 +101,12 @@ export default function MemberShop({ userId, onExit }: { userId: number; onExit:
           window.location.hash = 'order/' + order.orderId
           await cart.refresh()
         })} /> : <LoadStatus error={cart.error} retry={cart.refresh} />
-      case 'mypage': return <OrdersPage api={api} onExit={onExit} />
+      case 'mypage': return <OrdersPage api={api} user={user} onWithdrawn={onWithdrawn} />
       case 'home': return <CatalogPage api={api} filter={filter} onFilter={setFilter} hearts={hearts} />
     }
   }
   return <div className="member-shop">
-    <ShopHeader active={tab} onSearch={search} onHome={() => search('')} />
+    <ShopHeader active={tab} name={user.name} onLogout={onExit} onSearch={search} onHome={() => search('')} />
     <main id="member-content" tabIndex={-1}>
       {(productId || tab === 'home') && favorites.error && <LoadStatus error={favorites.error} retry={favorites.refresh} />}
       {likesAction.error && (productId || tab === 'favorites' || tab === 'home') && <p className="shop-error" role="alert">{likesAction.error}</p>}
