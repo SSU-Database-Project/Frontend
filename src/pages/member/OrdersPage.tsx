@@ -1,6 +1,8 @@
 import { formatPrice } from '../../utils/formatPrice'
 import { useCallback, useState } from 'react'
 import { LoadStatus, PageNav, ProductImage } from '../../components/member/ShopFeedback'
+import MemberAccountInfo from '../../components/member/MemberAccountInfo'
+import type { AuthUser } from '../../types/auth'
 import type { MemberApi, MemberOrder, Shipment, ShipmentAction } from '../../types/member'
 import { useMemberAction, useMemberRequest } from './useMemberRequest'
 
@@ -47,12 +49,13 @@ export function OrderDetailPage({ api, id }: { api: MemberApi; id: number }) {
   </section>
 }
 
-export default function OrdersPage({ api, onExit }: { api: MemberApi; onExit: () => void }) {
+export default function OrdersPage({ api, user, onWithdrawn }: { api: MemberApi; user: AuthUser; onWithdrawn: () => void }) {
   const [page, setPage] = useState(0)
   const load = useCallback(() => api.orders(page), [api, page])
   const orders = useMemberRequest(load)
   return <>
-    <div className="shop-title"><h1>마이페이지</h1><button className="text-button" onClick={onExit}>로그아웃</button></div>
+    <div className="shop-title"><h1>마이페이지</h1></div>
+    <MemberAccountInfo user={user} onWithdrawn={onWithdrawn} />
     <section className="orders"><h2>주문 내역 {orders.data && <span>{orders.data.totalElements}건</span>}</h2>
       {orders.data ? <>
         {!orders.data.content.length && <p className="shop-empty">아직 주문한 상품이 없어요. <a href="#home">상품 둘러보기</a></p>}

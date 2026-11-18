@@ -8,6 +8,12 @@ export type AuthUser = {
   role: Role
 }
 
+export type WithdrawalCheck = {
+  canWithdraw: boolean
+  inProgressOrderCount: number
+  message: string
+}
+
 export type SignupInput = {
   name: string
   email: string
