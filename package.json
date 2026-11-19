@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "build:mock": "tsc -b && vite build --mode mock",
     "lint": "oxlint",
+    "test:member-payment": "node --test tests/member-payment.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

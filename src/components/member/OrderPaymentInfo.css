@@ -1,0 +1,23 @@
+.payment-summary { display: grid; gap: 7px; padding: 16px 15px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.6; }
+.payment-summary > span { color: var(--muted); }
+.order-payment-method { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; padding: 16px 15px; border-bottom: 1px solid var(--line); font-size: 14px; line-height: 1.6; }
+.order-payment-method > span { color: var(--muted); font-size: 13px; }
+.payment-legacy { padding: 14px 0; color: var(--muted); font-size: 13px; }
+.order-payment { margin-top: 24px; padding: 22px; border: 1px solid var(--line); background: #fffefa; border-radius: 3px; }
+.payment-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; margin: 0; }
+.payment-details dt { color: var(--muted); font-size: 13px; }
+.payment-details dd { margin: 6px 0 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.payment-refunds { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.payment-refunds h3 { margin: 0 0 12px; font-size: 16px; }
+.payment-refunds ul { list-style: none; margin: 0; padding: 0; }
+.payment-refunds li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; font-size: 14px; }
+.payment-refunds li > div { display: grid; gap: 5px; }
+.payment-refunds li span { color: var(--muted); font-size: 12px; }
+.payment-success { display: grid; gap: 10px; margin: 24px 0; padding: 22px; border: 1px solid #b6c7b8; background: #eef5ee; font-size: 14px; line-height: 1.6; }
+.payment-success > strong { font-size: 19px; }
+.payment-success a { justify-self: start; text-decoration: underline; text-underline-offset: 3px; }
+
+@media (max-width: 760px) {
+  .payment-details { grid-template-columns: minmax(0, 1fr); }
+  .order-payment { padding: 18px; }
+}
