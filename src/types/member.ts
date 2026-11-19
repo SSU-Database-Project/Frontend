@@ -19,6 +19,14 @@ export type Cart = { items: CartItem[]; selectedCount: number; totalPrice: numbe
 export type DeliveryAddress = {
   receiverName: string; receiverPhone: string; zipCode: string; address: string; addressDetail: string
 }
+export type PaymentMethod = 'CARD' | 'BANK_TRANSFER' | 'EASY_PAY'
+export type PaymentInput = { method: 'CARD'; cardNumber: string } | { method: 'BANK_TRANSFER' | 'EASY_PAY' }
+export type CheckoutInput = DeliveryAddress & { payment: PaymentInput }
+export type PaymentRefund = { shipmentId: number; amount: number; refundedAt: string }
+export type OrderPayment = {
+  paymentId: number; method: PaymentMethod; amount: number; cardNumberMasked: string | null
+  approvalNo: string; paidAt: string; refundedAmount: number; balance: number; refunds: PaymentRefund[]
+}
 export type OrderItem = {
   orderItemId: number; productId: number; productName: string; imageUrl: string | null
   colorName: string; sizeLabel: string; quantity: number; unitPrice: number; lineTotal: number
@@ -26,7 +34,9 @@ export type OrderItem = {
 export type Shipment = {
   shipmentId: number; sellerCompanyName: string; status: ShipmentStatus; subtotal: number; items: OrderItem[]
 }
-export type MemberOrder = DeliveryAddress & { orderId: number; createdAt: string; totalPrice: number; shipments: Shipment[] }
+export type MemberOrder = DeliveryAddress & {
+  orderId: number; createdAt: string; totalPrice: number; shipments: Shipment[]; payment: OrderPayment | null
+}
 export type ShipmentAction = 'cancel' | 'confirm'
 export type CartUpdate = { quantity?: number; selected?: boolean }
 export interface MemberApi {
@@ -41,6 +51,6 @@ export interface MemberApi {
   remove(itemId: number): Promise<Cart>
   orders(page: number): Promise<Page<MemberOrder>>
   order(id: number): Promise<MemberOrder>
-  checkout(address: DeliveryAddress): Promise<MemberOrder>
+  checkout(input: CheckoutInput): Promise<MemberOrder>
   shipment(orderId: number, shipmentId: number, action: ShipmentAction): Promise<MemberOrder>
 }

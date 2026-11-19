@@ -29,6 +29,6 @@ export const memberApi: MemberApi = {
   remove: id => requestData('/api/cart/items/' + id, { method: 'DELETE' }),
   orders: page => requestData('/api/orders?size=10&page=' + page),
   order: id => requestData('/api/orders/' + id),
-  checkout: address => requestData('/api/orders', body('POST', address)),
+  checkout: input => requestData('/api/orders', body('POST', input)),
   shipment: (id, shipmentId, action) => requestData('/api/orders/' + id + '/shipments/' + shipmentId + '/' + action, { method: 'POST' }),
 }

@@ -1,5 +1,7 @@
 import { categories, demoOrders, products } from '../data/memberCatalog'
 import type { Cart, CartItem, MemberApi, MemberOrder, Page, ShopDetail, ShopOption } from '../types/member'
+import { ApiError } from './api'
+import { paymentInput } from '../utils/payment'
 
 const categoryList = categories.map((name, index) => ({ id: index + 1, name, children: [] }))
 const catalog: ShopDetail[] = products.map(p => ({
@@ -29,7 +31,7 @@ function initialState(userId: number): LocalState {
     const p = catalog.find(item => item.id === o.productId)!
     const total = o.unitPrice * o.quantity
     return { orderId: demoOrders.length - index, createdAt: o.date.replaceAll('.', '-') + 'T12:00:00', totalPrice: total,
-      receiverName: '시연 회원', receiverPhone: '', zipCode: '', address: '시연 배송지', addressDetail: '',
+      receiverName: '시연 회원', receiverPhone: '', zipCode: '', address: '시연 배송지', addressDetail: '', payment: null,
       shipments: [{ shipmentId: index + 1, sellerCompanyName: p.brandName, subtotal: total,
         status: o.status === '배송 완료' ? 'DELIVERED' : 'SHIPPING',
         items: [{ orderItemId: index + 1, productId: p.id, productName: p.name, imageUrl: p.imageUrl,
@@ -53,7 +55,9 @@ export function createMockMemberApi(userId: number): MemberApi {
   const key = 'seam.member.mock.v2.' + userId
   function read(): LocalState {
     const raw = sessionStorage.getItem(key)
-    return raw ? JSON.parse(raw) : initialState(userId)
+    const state: LocalState = raw ? JSON.parse(raw) : initialState(userId)
+    state.orders.forEach(order => { order.payment ??= null })
+    return state
   }
   const save = (state: LocalState) => sessionStorage.setItem(key, JSON.stringify(state))
   function findOrder(state: LocalState, id: number) {
@@ -113,13 +117,25 @@ export function createMockMemberApi(userId: number): MemberApi {
     },
     async orders(page) { return slicePage(read().orders, page, 10) },
     async order(id) { return findOrder(read(), id) },
-    async checkout(address) {
+    async checkout(input) {
       const state = read()
+      const { payment: request, ...address } = input
+      const payment = paymentInput(request.method, request.method === 'CARD' ? request.cardNumber : '')
       const lines = state.items.filter(item => item.selected)
       if (!lines.length || lines.some(line => line.state !== 'AVAILABLE' || line.quantity > line.stock)) throw new Error('주문할 상품을 확인해 주세요.')
+      const totalPrice = summarize(lines).totalPrice
+      if (totalPrice > 1_000_000) throw new ApiError('결제 한도(100만 원)를 초과해 승인이 거절되었습니다.', 402, 'PAYMENT_DECLINED')
+      if (payment.method === 'CARD' && payment.cardNumber.endsWith('0000')) {
+        throw new ApiError('카드사에서 승인을 거절했습니다.', 402, 'PAYMENT_DECLINED')
+      }
       const orderId = Math.max(0, ...state.orders.map(o => o.orderId)) + 1
       const sellers = Array.from(new Set(lines.map(line => line.brandName)))
-      const order: MemberOrder = { ...address, orderId, createdAt: new Date().toISOString(), totalPrice: summarize(lines).totalPrice,
+      const createdAt = new Date().toISOString()
+      const order: MemberOrder = { ...address, orderId, createdAt, totalPrice,
+        payment: { paymentId: orderId, method: payment.method, amount: totalPrice,
+          cardNumberMasked: payment.method === 'CARD' ? '****-****-****-' + payment.cardNumber.slice(-4) : null,
+          approvalNo: 'MOCK-' + createdAt.slice(0, 10).replaceAll('-', '') + '-' + crypto.randomUUID().slice(0, 8).toUpperCase(),
+          paidAt: createdAt, refundedAmount: 0, balance: totalPrice, refunds: [] },
         shipments: sellers.map((sellerCompanyName, index) => {
           const items = lines.filter(i => i.brandName === sellerCompanyName).map(i => ({
             ...i, orderItemId: i.cartItemId, unitPrice: i.price,
@@ -137,6 +153,11 @@ export function createMockMemberApi(userId: number): MemberApi {
       const shipment = order.shipments.find(s => s.shipmentId === id)
       if (!shipment || shipment.status !== (action === 'cancel' ? 'ORDERED' : 'DELIVERED')) throw new Error('변경할 수 없는 배송 상태입니다.')
       shipment.status = action === 'cancel' ? 'CANCELED' : 'CONFIRMED'
+      if (action === 'cancel' && order.payment) {
+        order.payment.refunds.push({ shipmentId: id, amount: shipment.subtotal, refundedAt: new Date().toISOString() })
+        order.payment.refundedAmount += shipment.subtotal
+        order.payment.balance = order.payment.amount - order.payment.refundedAmount
+      }
       save(state)
       return order
     },
