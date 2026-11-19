@@ -8,6 +8,7 @@ import { createMockMemberApi } from '../../services/mockMember'
 import type { AuthUser } from '../../types/auth'
 import type { CartUpdate } from '../../types/member'
 import CartPage from './CartPage'
+import CheckoutPage from './CheckoutPage'
 import CatalogPage, { type CatalogFilter } from './CatalogPage'
 import OrdersPage, { OrderDetailPage } from './OrdersPage'
 import ProductPage from './ProductPage'
@@ -30,9 +31,11 @@ export default function MemberShop({ user, onExit, onWithdrawn }: { user: AuthUs
   const refreshCart = cart.refresh
   const refreshLikes = favorites.refresh
   const productId = /^product\/(\d+)$/.exec(route)?.[1]
-  const orderId = /^order\/(\d+)$/.exec(route)?.[1]
-  const tab: Tab = orderId ? 'mypage' : Object.hasOwn(titles, route) ? route as Tab : 'home'
-  const title = productId ? '상품 상세' : orderId ? '주문 상세' : titles[tab]
+  const orderRoute = /^order\/(\d+)(\/complete)?$/.exec(route)
+  const orderId = orderRoute?.[1]
+  const checkout = route === 'checkout'
+  const tab: Tab = orderId ? 'mypage' : checkout ? 'cart' : Object.hasOwn(titles, route) ? route as Tab : 'home'
+  const title = productId ? '상품 상세' : checkout ? '주문서' : orderId ? (orderRoute?.[2] ? '주문·결제 완료' : '주문 상세') : titles[tab]
 
   useEffect(() => {
     function sync() {
@@ -81,12 +84,16 @@ export default function MemberShop({ user, onExit, onWithdrawn }: { user: AuthUs
     window.scrollTo(0, 0)
   }
   function content() {
+    if (checkout) return <CheckoutPage api={api} onComplete={order => {
+      window.location.hash = 'order/' + order.orderId + '/complete'
+      void cart.refresh()
+    }} />
     if (productId) return <>
       {cart.error && <LoadStatus error={cart.error} retry={cart.refresh} />}
       <ProductPage key={productId} api={api} id={Number(productId)} hearts={hearts} cart={cart.data} busy={cartAction.busy}
         add={(optionId, done) => changeCart(async () => { cart.replace(await api.add(optionId)); done() })} />
     </>
-    if (orderId) return <OrderDetailPage key={orderId} api={api} id={Number(orderId)} />
+    if (orderId) return <OrderDetailPage key={orderId} api={api} id={Number(orderId)} completed={!!orderRoute?.[2]} />
     switch (tab) {
       case 'favorites': return <>
         <div className="shop-title"><h1>좋아요</h1>{favorites.data && <span>{favorites.data.length}개 상품</span>}</div>
@@ -96,11 +103,7 @@ export default function MemberShop({ user, onExit, onWithdrawn }: { user: AuthUs
       </>
       case 'cart': return cart.data ? <CartPage cart={cart.data} busy={cartAction.busy} update={update}
         remove={id => changeCart(async () => cart.replace(await api.remove(id)))}
-        checkout={address => changeCart(async () => {
-          const order = await api.checkout(address)
-          window.location.hash = 'order/' + order.orderId
-          await cart.refresh()
-        })} /> : <LoadStatus error={cart.error} retry={cart.refresh} />
+        onCheckout={() => { window.location.hash = 'checkout' }} /> : <LoadStatus error={cart.error} retry={cart.refresh} />
       case 'mypage': return <OrdersPage api={api} user={user} onWithdrawn={onWithdrawn} />
       case 'home': return <CatalogPage api={api} filter={filter} onFilter={setFilter} hearts={hearts} />
     }
@@ -110,7 +113,7 @@ export default function MemberShop({ user, onExit, onWithdrawn }: { user: AuthUs
     <main id="member-content" tabIndex={-1}>
       {(productId || tab === 'home') && favorites.error && <LoadStatus error={favorites.error} retry={favorites.refresh} />}
       {likesAction.error && (productId || tab === 'favorites' || tab === 'home') && <p className="shop-error" role="alert">{likesAction.error}</p>}
-      {cartAction.error && (productId || tab === 'cart') && <p className="shop-error" role="alert">{cartAction.error}</p>}
+      {cartAction.error && (productId || (tab === 'cart' && !checkout)) && <p className="shop-error" role="alert">{cartAction.error}</p>}
       {content()}
     </main>
   </div>
