@@ -183,6 +183,8 @@ export type SellerShipment = {
   createdAt: string
   confirmedAt?: string
   canceledAt?: string
+  canceledBy?: 'BUYER' | 'SELLER'
+  cancelReason?: string
 }
 
 export type StatPeriod = 'daily' | 'weekly' | 'monthly'
