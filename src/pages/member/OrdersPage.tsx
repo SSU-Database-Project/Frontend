@@ -64,13 +64,15 @@ export function OrderDetailPage({ api, id, completed = false }: { api: MemberApi
   </section>
 }
 
-export default function OrdersPage({ api, user, onWithdrawn }: { api: MemberApi; user: AuthUser; onWithdrawn: () => void }) {
+export default function OrdersPage({ api, user, onWithdrawn, onPasswordChanged }: {
+  api: MemberApi; user: AuthUser; onWithdrawn: () => void; onPasswordChanged: () => void
+}) {
   const [page, setPage] = useState(0)
   const load = useCallback(() => api.orders(page), [api, page])
   const orders = useMemberRequest(load)
   return <>
     <div className="shop-title"><h1>마이페이지</h1></div>
-    <MemberAccountInfo user={user} onWithdrawn={onWithdrawn} />
+    <MemberAccountInfo user={user} onWithdrawn={onWithdrawn} onPasswordChanged={onPasswordChanged} />
     <section className="orders"><h2>주문 내역 {orders.data && <span>{orders.data.totalElements}건</span>}</h2>
       {orders.data ? <>
         {!orders.data.content.length && <p className="shop-empty">아직 주문한 상품이 없어요. <a href="#home">상품 둘러보기</a></p>}
