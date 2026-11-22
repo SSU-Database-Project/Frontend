@@ -140,7 +140,7 @@ export default function SellerWorkspace({ accountLabel, onLogout }: { accountLab
     {
       id: 'orders',
       label: '주문·배송 관리',
-      caption: '배송 상태 선택 및 구매확정',
+      caption: '배송 상태 변경 및 발송 전 취소',
       icon: 'order',
       badgeCount: unread.orders,
     },

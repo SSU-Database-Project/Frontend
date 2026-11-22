@@ -15,14 +15,31 @@ type SellerStatsTabProps = {
   shipments: SellerShipment[]
 }
 
+function formatLocalDate(date: Date): string {
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function getDefaultDateRange(): { from: string; to: string } {
+  const today = new Date()
+  const from = new Date(today)
+  from.setDate(today.getDate() - 9)
+  return {
+    from: formatLocalDate(from),
+    to: formatLocalDate(today),
+  }
+}
+
 export default function SellerStatsTab({
   brands,
   products,
   shipments,
 }: SellerStatsTabProps) {
   const [period, setPeriod] = useState<StatPeriod>('daily')
-  const [fromDate, setFromDate] = useState('2026-11-08')
-  const [toDate, setToDate] = useState('2026-11-17')
+  const [fromDate, setFromDate] = useState(() => getDefaultDateRange().from)
+  const [toDate, setToDate] = useState(() => getDefaultDateRange().to)
   const [stats, setStats] = useState<SalesStatPoint[]>([])
   const [topProducts, setTopProducts] = useState<TopProductStat[]>([])
 
@@ -30,7 +47,7 @@ export default function SellerStatsTab({
     let active = true
     void Promise.all([
       getSalesStats(period, 'SELLER', fromDate, toDate),
-      getTopProducts('SELLER'),
+      getTopProducts('SELLER', undefined, toDate),
     ])
       .then(([nextStats, nextTop]) => {
         if (!active) return

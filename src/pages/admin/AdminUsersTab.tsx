@@ -43,6 +43,7 @@ export default function AdminUsersTab({
 }: AdminUsersTabProps) {
   const [roleFilter, setRoleFilter] = useState<'ALL' | Role>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | UserStatus>('ALL')
+  const [keyword, setKeyword] = useState('')
   const [confirmWithdrawUser, setConfirmWithdrawUser] = useState<UserItem | null>(
     null,
   )
@@ -54,6 +55,13 @@ export default function AdminUsersTab({
   const filtered = users.filter(u => {
     if (roleFilter !== 'ALL' && u.role !== roleFilter) return false
     if (statusFilter !== 'ALL' && u.status !== statusFilter) return false
+    if (keyword.trim()) {
+      const q = keyword.trim().toLowerCase()
+      return (
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q)
+      )
+    }
     return true
   })
 
@@ -172,6 +180,16 @@ export default function AdminUsersTab({
               </button>
             ))}
           </div>
+
+          <div className="ws-search-box">
+            <input
+              className="ws-input"
+              aria-label="회원 이름 또는 이메일 검색"
+              placeholder="회원 이름 또는 이메일 검색"
+              value={keyword}
+              onChange={e => setKeyword(e.target.value)}
+            />
+          </div>
         </div>
 
         <div className="ws-table-wrap">
@@ -265,6 +283,13 @@ export default function AdminUsersTab({
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="ws-empty">
+                    조건에 해당하는 회원이 없습니다.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
