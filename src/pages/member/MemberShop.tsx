@@ -19,7 +19,9 @@ const titles = { home: '상품 둘러보기', favorites: '좋아요', cart: '장
 type Tab = keyof typeof titles
 function currentRoute() { return window.location.hash.slice(1) || 'home' }
 
-export default function MemberShop({ user, onExit, onWithdrawn }: { user: AuthUser; onExit: () => void; onWithdrawn: () => void }) {
+export default function MemberShop({ user, onExit, onWithdrawn, onPasswordChanged }: {
+  user: AuthUser; onExit: () => void; onWithdrawn: () => void; onPasswordChanged: () => void
+}) {
   const userId = user.id
   const api = useMemo(() => IS_MOCK_MODE ? createMockMemberApi(userId) : memberApi, [userId])
   const [route, setRoute] = useState(currentRoute)
@@ -104,7 +106,7 @@ export default function MemberShop({ user, onExit, onWithdrawn }: { user: AuthUs
       case 'cart': return cart.data ? <CartPage cart={cart.data} busy={cartAction.busy} update={update}
         remove={id => changeCart(async () => cart.replace(await api.remove(id)))}
         onCheckout={() => { window.location.hash = 'checkout' }} /> : <LoadStatus error={cart.error} retry={cart.refresh} />
-      case 'mypage': return <OrdersPage api={api} user={user} onWithdrawn={onWithdrawn} />
+      case 'mypage': return <OrdersPage api={api} user={user} onWithdrawn={onWithdrawn} onPasswordChanged={onPasswordChanged} />
       case 'home': return <CatalogPage api={api} filter={filter} onFilter={setFilter} hearts={hearts} />
     }
   }

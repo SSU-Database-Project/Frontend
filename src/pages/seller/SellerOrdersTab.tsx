@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import Icon from '../../components/Icon'
-import { updateShipmentStatus } from '../../services/mockStore'
+import {
+  cancelSellerShipment,
+  updateShipmentStatus,
+} from '../../services/mockStore'
 import type { SellerShipment, ShipmentStatus } from '../../types/commerce'
 
 const SHIPMENT_STATUS_LABEL: Record<ShipmentStatus, string> = {
@@ -25,6 +28,9 @@ export default function SellerOrdersTab({
 }: SellerOrdersTabProps) {
   const [viewMode, setViewMode] = useState<'ACTIVE' | 'ARCHIVED'>('ACTIVE')
   const [statusFilter, setStatusFilter] = useState<'ALL' | ShipmentStatus>('ALL')
+  const [cancelingShipment, setCancelingShipment] =
+    useState<SellerShipment | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
 
   const activeShipments = shipments.filter(
     s => s.status !== 'CONFIRMED' && s.status !== 'CANCELED',
@@ -38,28 +44,43 @@ export default function SellerOrdersTab({
     s => statusFilter === 'ALL' || s.status === statusFilter,
   )
 
-  async function handleChangeStatus(shipment: SellerShipment, nextStatus: ShipmentStatus) {
+  async function handleChangeStatus(
+    shipment: SellerShipment,
+    nextStatus: 'PREPARING' | 'SHIPPING' | 'DELIVERED',
+  ) {
     try {
       await updateShipmentStatus(shipment.id, nextStatus)
       await onRefresh()
-      if (nextStatus === 'CONFIRMED') {
-        onNotify(
-          'success',
-          `주문 [${shipment.orderNumber}]이(가) 구매확정 처리되어 [확정 주문내역]으로 이동되었습니다. 이후 상태 수정이 불가합니다.`,
-        )
-      } else if (nextStatus === 'CANCELED') {
-        onNotify(
-          'info',
-          `주문 [${shipment.orderNumber}]이(가) 취소 처리되었으며 옵션 재고가 자동 복원되었습니다.`,
-        )
-      } else {
-        onNotify(
-          'success',
-          `주문 [${shipment.orderNumber}] 배송 상태가 [${SHIPMENT_STATUS_LABEL[nextStatus]}](으)로 변경되었습니다.`,
-        )
-      }
+      onNotify(
+        'success',
+        `주문 [${shipment.orderNumber}] 배송 상태가 [${SHIPMENT_STATUS_LABEL[nextStatus]}](으)로 변경되었습니다.`,
+      )
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : '배송 상태 변경에 실패했습니다.')
+      onNotify(
+        'error',
+        err instanceof Error ? err.message : '배송 상태 변경에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleCancelSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!cancelingShipment) return
+    try {
+      await cancelSellerShipment(cancelingShipment.id, cancelReason)
+      const orderNumber = cancelingShipment.orderNumber
+      setCancelingShipment(null)
+      setCancelReason('')
+      await onRefresh()
+      onNotify(
+        'info',
+        `주문 [${orderNumber}]이(가) 판매자 취소 처리되었으며 재고 복원 및 부분 환불이 완료되었습니다.`,
+      )
+    } catch (err) {
+      onNotify(
+        'error',
+        err instanceof Error ? err.message : '주문 취소 처리에 실패했습니다.',
+      )
     }
   }
 
@@ -69,7 +90,7 @@ export default function SellerOrdersTab({
         <div>
           <h1>주문 및 배송 관리</h1>
           <p>
-            배송 묶음 단위로 배송 상태를 단계별로 변경합니다. 배송완료 후 확정된 주문은 수정이 잠기며 확정 주문내역으로 이동합니다.
+            배송 묶음 단위로 배송 상태를 단계별로 변경합니다. 배송 전(주문완료·배송준비) 단계에서만 판매자 취소가 가능하며, 구매확정은 배송완료 후 구매자가 직접 수행합니다.
           </p>
         </div>
       </div>
@@ -87,14 +108,14 @@ export default function SellerOrdersTab({
           <strong className="ws-kpi-value">
             {shipments.filter(s => s.status === 'PREPARING' || s.status === 'SHIPPING').length}건
           </strong>
-          <span className="ws-kpi-sub">출고 및 택배 이동 진행 중</span>
+          <span className="ws-kpi-sub">배송준비 단계까지 판매자 취소 가능</span>
         </div>
         <div className="ws-kpi-card">
-          <span className="ws-kpi-label">배송완료 (확정 대기)</span>
+          <span className="ws-kpi-label">배송완료 (구매자 확정 대기)</span>
           <strong className="ws-kpi-value">
             {shipments.filter(s => s.status === 'DELIVERED').length}건
           </strong>
-          <span className="ws-kpi-sub">확정 시 확정 주문내역으로 이동</span>
+          <span className="ws-kpi-sub">구매자 구매확정 대기 중</span>
         </div>
         <div className="ws-kpi-card">
           <span className="ws-kpi-label">구매확정 완료</span>
@@ -172,7 +193,7 @@ export default function SellerOrdersTab({
                 <th>주문 상품 (옵션·수량)</th>
                 <th>합계 금액</th>
                 <th>현재 배송 상태</th>
-                <th>배송 상태 변경 / 확정</th>
+                <th>배송 상태 변경 / 취소</th>
               </tr>
             </thead>
             <tbody>
@@ -220,6 +241,12 @@ export default function SellerOrdersTab({
                     {shipment.canceledAt && (
                       <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
                         취소: {shipment.canceledAt.replace('T', ' ')}
+                        {shipment.canceledBy && (
+                          <div>
+                            ({shipment.canceledBy === 'SELLER' ? '판매자 취소' : '구매자 취소'}
+                            {shipment.cancelReason ? `: ${shipment.cancelReason}` : ''})
+                          </div>
+                        )}
                       </div>
                     )}
                   </td>
@@ -236,7 +263,10 @@ export default function SellerOrdersTab({
                         <button
                           type="button"
                           className="ws-btn ws-btn-sm ws-btn-danger"
-                          onClick={() => handleChangeStatus(shipment, 'CANCELED')}
+                          onClick={() => {
+                            setCancelingShipment(shipment)
+                            setCancelReason('')
+                          }}
                         >
                           주문 취소
                         </button>
@@ -244,13 +274,25 @@ export default function SellerOrdersTab({
                     )}
 
                     {shipment.status === 'PREPARING' && (
-                      <button
-                        type="button"
-                        className="ws-btn ws-btn-sm ws-btn-primary"
-                        onClick={() => handleChangeStatus(shipment, 'SHIPPING')}
-                      >
-                        배송중으로 변경
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="ws-btn ws-btn-sm ws-btn-primary"
+                          onClick={() => handleChangeStatus(shipment, 'SHIPPING')}
+                        >
+                          배송중으로 변경
+                        </button>
+                        <button
+                          type="button"
+                          className="ws-btn ws-btn-sm ws-btn-danger"
+                          onClick={() => {
+                            setCancelingShipment(shipment)
+                            setCancelReason('')
+                          }}
+                        >
+                          주문 취소
+                        </button>
+                      </div>
                     )}
 
                     {shipment.status === 'SHIPPING' && (
@@ -264,14 +306,18 @@ export default function SellerOrdersTab({
                     )}
 
                     {shipment.status === 'DELIVERED' && (
-                      <button
-                        type="button"
-                        className="ws-btn ws-btn-sm ws-btn-success"
-                        onClick={() => handleChangeStatus(shipment, 'CONFIRMED')}
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          fontSize: '12px',
+                          color: 'var(--muted)',
+                          fontWeight: 600,
+                        }}
                       >
-                        <Icon name="check" />
-                        <span>확정 (확정 주문내역 이동)</span>
-                      </button>
+                        <span>배송완료 (구매자 확정 대기)</span>
+                      </span>
                     )}
 
                     {(shipment.status === 'CONFIRMED' || shipment.status === 'CANCELED') && (
@@ -303,6 +349,63 @@ export default function SellerOrdersTab({
           </table>
         </div>
       </section>
+
+      {cancelingShipment && (
+        <div
+          className="ws-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="seller-cancel-shipment-title"
+        >
+          <div className="ws-modal" style={{ maxWidth: '480px' }}>
+            <div className="ws-modal-header">
+              <h2 id="seller-cancel-shipment-title">
+                판매자 주문 취소 ({cancelingShipment.orderNumber})
+              </h2>
+              <button
+                type="button"
+                className="ws-banner-close"
+                onClick={() => setCancelingShipment(null)}
+                aria-label="모달 닫기"
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+            <form
+              onSubmit={handleCancelSubmit}
+              className="ws-main"
+              style={{ gap: '14px' }}
+            >
+              <div className="ws-field">
+                <label htmlFor="seller-cancel-reason">
+                  취소 사유 (필수 · 구매자 주문내역에 표시됨)
+                </label>
+                <textarea
+                  id="seller-cancel-reason"
+                  className="ws-textarea"
+                  placeholder="예: 재고 소진 및 품절로 인한 출고 불가"
+                  maxLength={255}
+                  value={cancelReason}
+                  onChange={e => setCancelReason(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="ws-modal-actions">
+                <button
+                  type="button"
+                  className="ws-btn"
+                  onClick={() => setCancelingShipment(null)}
+                >
+                  닫기
+                </button>
+                <button type="submit" className="ws-btn ws-btn-danger">
+                  주문 취소 확정
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   )
 }

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import Icon from '../../components/Icon'
-import { deleteSellerProduct, updateAdminProductStatus } from '../../services/mockStore'
+import { updateAdminProductStatus } from '../../services/mockStore'
 import type { Gender, Product, ProductStatus } from '../../types/commerce'
 
 const PRODUCT_STATUS_LABEL: Record<ProductStatus, string> = {
@@ -84,16 +84,6 @@ export default function AdminProductsTab({
       )
     } catch (err) {
       onNotify('error', err instanceof Error ? err.message : '상품 거절 처리에 실패했습니다.')
-    }
-  }
-
-  async function handleDelete(product: Product) {
-    try {
-      await deleteSellerProduct(product.id, 'ADMIN')
-      await onRefresh()
-      onNotify('info', `상품 [${product.name}]이(가) 삭제 처리되었습니다.`)
-    } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : '상품 삭제에 실패했습니다.')
     }
   }
 
@@ -271,13 +261,11 @@ export default function AdminProductsTab({
                         </button>
                       )}
 
-                      <button
-                        type="button"
-                        className="ws-btn ws-btn-sm ws-btn-danger"
-                        onClick={() => handleDelete(product)}
-                      >
-                        삭제
-                      </button>
+                      {product.status === 'REJECTED' && (
+                        <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                          반려됨 (판매자 수정 시 재심사)
+                        </span>
+                      )}
                     </div>
                   </td>
                 </tr>

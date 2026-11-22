@@ -62,9 +62,16 @@ export default function App() {
     setScreen({ page: 'login', message: '회원 탈퇴가 완료되었습니다.' })
   }
 
+  function accountPasswordChanged() {
+    logout()
+    clearRoute()
+    setScreen({ page: 'login', message: '비밀번호가 변경되었습니다. 새 비밀번호로 다시 로그인해 주세요.' })
+  }
+
   if (screen.page === 'home') {
     const { user } = screen
-    if (user.role === 'USER') return <MemberShop key={user.id} user={user} onExit={signOut} onWithdrawn={accountWithdrawn} />
+    if (user.role === 'USER') return <MemberShop key={user.id} user={user} onExit={signOut}
+      onWithdrawn={accountWithdrawn} onPasswordChanged={accountPasswordChanged} />
     if (user.role === 'SELLER') return <SellerWorkspace accountLabel={user.name} onLogout={signOut} />
     return <AdminWorkspace accountLabel={user.email} onLogout={signOut} />
   }
